@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '19';                // subir junto con VERSION de sw.js
+const VERSION_APP = '20';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 // Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
@@ -2117,7 +2117,7 @@ function tarjetaReserva(r) {
   const cerrada = r.estado === 'entregada' || r.estado === 'cancelada';
   const sol = r.tipo === 'solicitud';
   const cobrar = c.falta > 0 ? `<button onclick="pantallaCobro(${rid})">💵 Cobrar</button>` : '';
-  const link = c.falta > 0 ? `<button onclick="mandarLinkPago(${rid})">📲 Link de pago</button>` : '';
+  const link = c.falta > 0 ? `<button onclick="mandarLinkPago(${rid})">📲 Pedir pago</button>` : '';
   let botones = '';
   if (r.estado === 'pendiente') {
     botones = `
@@ -2223,18 +2223,12 @@ async function mandarLinkPago(rid) {
   const c = cuentasDe(r);
   const monto = c.faltaSena > 0 ? c.faltaSena : c.falta;
   const que = r.tipo === 'solicitud' ? 'el pedido' : (c.faltaSena > 0 && c.faltaSena < c.falta ? 'la seña' : 'tu reserva');
-  mostrarCargando('Armando el link…');
-  let link = '';
-  try {
-    const { data, error } = await db.functions.invoke('mercadopago', { body: { rid } });
-    if (!error && data && data.link) link = data.link;
-  } catch (e) { /* sin cobro automático */ }
-  ocultarCargando();
+  const link = '';   // cobro por transferencia al alias (sin comisión)
   let texto = `Hola ${r.cliente}! 👋 Para ${que} de ${r.cantidad} × *${p ? p.titulo : ''}* en ${estado.nombre} son ${plata(monto)}.`;
   if (link) texto += `\nPodés pagar acá con Mercado Pago:\n${link}`;
   else if (estado.mpAlias) texto += `\nPodés transferir al alias *${estado.mpAlias}*${estado.mpTitular ? ' (' + estado.mpTitular + ')' : ''} y mandarme el comprobante.`;
   else texto += '\nLo podés pagar acá en el puesto.';
-  if (!link && !estado.mpAlias) avisar('Tip: poné el alias de Mercado Pago en Ajustes → Cobros', 'info', 4000);
+  if (!estado.mpAlias) avisar('Tip: poné tu alias en Ajustes → Cobros', 'info', 4000);
   abrirWhatsApp(numeroWhatsApp(r.telefono), texto);
 }
 
@@ -3869,7 +3863,7 @@ function pantallaPagoCliente() {
         <p class="monto">${plata(r.aPagar)}</p>
       </div>
       <div class="acciones">
-        <button class="btn-principal btn-mp" onclick="pagarConMercadoPago(${r.rid})">💳 Pagar con Mercado Pago</button>
+        ${estado.mpAlias ? `<button class="btn-principal btn-mp" onclick="pantallaTransferencia()">💳 Pagar por transferencia (alias)</button>` : ''}
         <button class="accion" onclick="pagoEnLocal()">🏪 Prefiero pagar en el puesto</button>
         <button class="accion cerrar" onclick="cerrarHoja()">Seguir mirando</button>
       </div>` : `
@@ -3903,7 +3897,7 @@ function pantallaTransferencia() {
   const r = ultimaReservaCliente;
   mostrarHoja(`
     <h3>💳 Pagar por transferencia</h3>
-    <p class="info">Transferí ${plata(r.aPagar)} desde Mercado Pago o tu banco a:</p>
+    <p class="info">Transferí ${plata(r.aPagar)} desde Mercado Pago o tu banco a este alias:</p>
     <div class="caja-pago">
       <p class="monto chico">${escapar(estado.mpAlias)}</p>
       ${estado.mpTitular ? `<p>A nombre de ${escapar(estado.mpTitular)}</p>` : ''}
@@ -3912,7 +3906,7 @@ function pantallaTransferencia() {
     <p class="ayuda-campo">Después mandanos el comprobante por WhatsApp.</p>
     <div class="acciones">
       <button class="btn-principal btn-wa" onclick="avisarReserva('transferencia')">💬 Mandar comprobante por WhatsApp</button>
-      <button class="accion cerrar" onclick="cerrarHoja()">Seguir mirando</button>
+      <button class="accion" onclick="pantallaPagoCliente()">◀ Volver</button>
     </div>`);
 }
 
