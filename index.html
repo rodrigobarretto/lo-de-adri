@@ -905,7 +905,7 @@
         </div>
 
         <div id="bloqueSuelto" class="sub-bloque">
-          <input type="text" id="nuevoTitulo" placeholder="Empezá a escribir: Billiken, Clarín, Audiolibros…" autocomplete="off" autocapitalize="sentences" oninput="sugerirTitulo(this)" onfocus="sugerirTitulo(this)" onblur="ocultarSugerencias(this)" aria-controls="sug-nuevoTitulo">
+          <input type="text" id="nuevoTitulo" placeholder="Empezá a escribir: Billiken, Clarín, Audiolibros…" autocomplete="off" autocapitalize="sentences" oninput="sugerirTitulo(this); mostrarTituloFinal()" onfocus="sugerirTitulo(this)" onblur="ocultarSugerencias(this)" aria-controls="sug-nuevoTitulo">
           <div class="sugerencias" id="sug-nuevoTitulo" role="listbox"></div>
         </div>
 
@@ -913,15 +913,16 @@
           <p class="mini">¿De qué colección?</p>
           <div id="listaSeries" class="lista-series"></div>
           <div id="bloqueSerieNueva" class="oculto">
-            <input type="text" id="nombreSerieNueva" placeholder="Nombre (Ej: Audiolibros Disney)" autocomplete="off" autocapitalize="words" oninput="sugerirTitulo(this)" onfocus="sugerirTitulo(this)" onblur="ocultarSugerencias(this)" aria-controls="sug-nombreSerieNueva">
+            <input type="text" id="nombreSerieNueva" placeholder="Nombre (Ej: Audiolibros Disney)" autocomplete="off" autocapitalize="words" oninput="sugerirTitulo(this); mostrarTituloFinal()" onfocus="sugerirTitulo(this)" onblur="ocultarSugerencias(this)" aria-controls="sug-nombreSerieNueva">
             <div class="sugerencias" id="sug-nombreSerieNueva" role="listbox"></div>
             <p class="ayuda-campo">La foto de este número va a ser la portada de la colección. Después se puede cambiar.</p>
           </div>
-          <p class="mini">¿Qué número es? <span class="opcional">(si lo tiene)</span></p>
-          <div class="campo-precio campo-numero">
-            <span>N°</span>
-            <input type="text" id="nuevoNumero" inputmode="numeric" placeholder="0" autocomplete="off" oninput="mostrarTituloFinal()">
-          </div>
+        </div>
+
+        <p class="mini">¿Qué número es? <span class="opcional">(si lo tiene)</span></p>
+        <div class="campo-precio campo-numero">
+          <span>N°</span>
+          <input type="text" id="nuevoNumero" inputmode="numeric" placeholder="0" autocomplete="off" oninput="mostrarTituloFinal()">
         </div>
 
         <p class="mini">Modelo o detalle <span class="opcional">(opcional, va en el título)</span></p>

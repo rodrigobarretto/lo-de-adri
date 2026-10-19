@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '13';                // subir junto con VERSION de sw.js
+const VERSION_APP = '14';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -453,15 +453,30 @@ function limpiarFormulario() {
   $('fotoCaja').innerHTML = '<span class="grande">📷</span><span>Tocá acá para sacar la foto</span>';
 }
 
+// Busca una colección por nombre (sin importar mayúsculas ni tildes) o la crea
+async function coleccionPorNombre(nombre, categoria, portada) {
+  const k = normalizar(nombre);
+  const existente = estado.series.find(x => normalizar(x.nombre) === k);
+  if (existente) return existente;
+  const { data, error } = await db.from('series')
+    .insert([{ nombre: nombre.trim().slice(0, 80), categoria: categoria || 'Colecciones', portada_url: portada || '', editorial: estado.editorial || null }])
+    .select()
+    .single();
+  if (error) throw error;
+  estado.series.push(data);
+  return data;
+}
+
 async function guardarProducto() {
   const precio = soloNumeros($('nuevoPrecio').value);
-  const enSerie = estado.modo === 'serie';
+  // Si se eligió "Colección" como tipo, va a una colección aunque se haya escrito como algo suelto
+  const enSerie = estado.modo === 'serie' || estado.categoria === 'Colecciones';
   let titulo = $('nuevoTitulo').value.trim();
   const numero = $('nuevoNumero').value.trim();
   const nombreNueva = $('nombreSerieNueva').value.trim();
   const detalle = $('nuevoDetalle').value.trim().slice(0, 60);
 
-  if (enSerie) {
+  if (estado.modo === 'serie') {
     if (!estado.serieElegida) { avisar('Elegí de qué colección es (paso 2)', 'mal'); return; }
     if (estado.serieElegida === 'nueva' && !nombreNueva) { avisar('Falta el nombre de la colección', 'mal'); $('nombreSerieNueva').focus(); return; }
   } else if (!titulo) {
@@ -493,25 +508,22 @@ async function guardarProducto() {
 
     let serie = null;
     if (enSerie) {
-      if (estado.serieElegida === 'nueva') {
-        const { data, error } = await db.from('series')
-          .insert([{ nombre: nombreNueva, categoria: estado.categoria, portada_url: imagenUrl, editorial: estado.editorial || null }])
-          .select()
-          .single();
-        if (error) throw error;
-        serie = data;
-        estado.series.push(serie);
-        estado.serieElegida = serie.id;
+      if (estado.modo !== 'serie') {
+        serie = await coleccionPorNombre(titulo, 'Colecciones', imagenUrl);
+      } else if (estado.serieElegida === 'nueva') {
+        serie = await coleccionPorNombre(nombreNueva, estado.categoria, imagenUrl);
       } else {
         serie = serieDe(estado.serieElegida);
       }
+      estado.serieElegida = serie.id;
       fila.serie_id = serie.id;
       fila.numero = numero || null;
       fila.categoria = serie.categoria;
       fila.editorial = fila.editorial || serie.editorial || null;
       fila.titulo = armarTitulo(serie.nombre, numero, detalle);
     } else {
-      fila.titulo = armarTitulo(titulo, '', detalle);
+      fila.titulo = armarTitulo(titulo, numero, detalle);
+      fila.numero = numero || null;
     }
     fila.detalle = detalle || null;
 
@@ -524,7 +536,12 @@ async function guardarProducto() {
     ocultarCargando();
     limpiarFormulario();
     if (enSerie) {
-      avisar('✅ Guardado. Sacá la foto del siguiente número', 'ok', 3500);
+      // Queda lista la misma colección para cargar el siguiente número
+      if (estado.modo !== 'serie') {
+        estado.modo = 'serie';
+        document.querySelectorAll('#elegirModo button').forEach(b => b.classList.toggle('activo', b.dataset.valor === 'serie'));
+      }
+      avisar('✅ Guardado en la colección "' + serie.nombre + '". Podés cargar el siguiente número', 'ok', 3800);
       prepararCarga();
     } else {
       avisar('✅ ¡Guardado!');
@@ -691,7 +708,8 @@ function consultaDeLaCarga() {
     if (!nombre) return '';
     return [nombre, numero ? 'N° ' + numero : '', $('nuevoDetalle').value.trim(), editorial].filter(Boolean).join(' ');
   }
-  return [$('nuevoTitulo').value.trim(), $('nuevoDetalle').value.trim(), estado.editorial].filter(Boolean).join(' ');
+  const n = $('nuevoNumero').value.trim();
+  return [$('nuevoTitulo').value.trim(), n ? 'N° ' + n : '', $('nuevoDetalle').value.trim(), estado.editorial].filter(Boolean).join(' ');
 }
 
 function buscarFotoParaCarga() {
@@ -892,7 +910,7 @@ function mostrarTituloFinal() {
   } else {
     base = $('nuevoTitulo').value.trim();
   }
-  const t = armarTitulo(base, estado.modo === 'serie' ? $('nuevoNumero').value.trim() : '', $('nuevoDetalle').value.trim());
+  const t = armarTitulo(base, $('nuevoNumero').value.trim(), $('nuevoDetalle').value.trim());
   el.textContent = t ? 'Así se va a ver: ' + t : '';
 }
 
@@ -1112,6 +1130,7 @@ function pantallaEditar(pid) {
   const p = productoPorId(pid);
   const serie = p.serie_id ? serieDe(p.serie_id) : null;
   const opcionesSerie = '<option value="">— Ninguna (es algo suelto) —</option>' +
+    (serie ? '' : '<option value="nueva">➕ Crear colección con este título</option>') +
     estado.series.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
       .map(x => `<option value="${Number(x.id)}" ${serie && Number(serie.id) === Number(x.id) ? 'selected' : ''}>${escapar(x.nombre)}</option>`).join('');
   const opcionesCat = Object.keys(CATEGORIAS).map(c => `<option value="${c}" ${p.categoria === c ? 'selected' : ''}>${escapar(CATEGORIAS[c])}</option>`).join('');
@@ -1126,7 +1145,7 @@ function pantallaEditar(pid) {
         <input type="text" id="edTitulo" value="${escapar(serie ? '' : tituloBase(p))}" autocomplete="off" autocapitalize="sentences" oninput="actualizarEdicion()">
       </div>
 
-      <div id="edBloqueNumero" class="${serie ? '' : 'oculto'}">
+      <div id="edBloqueNumero">
         <label class="mini" for="edNumero">Número <span class="opcional">(si lo tiene)</span></label>
         <div class="campo-precio campo-numero">
           <span>N°</span>
@@ -1157,18 +1176,19 @@ function pantallaEditar(pid) {
 }
 
 function datosEdicion() {
-  const sid = $('edSerie').value ? Number($('edSerie').value) : null;
+  const valor = $('edSerie').value;
+  const nueva = valor === 'nueva';
+  const sid = valor && !nueva ? Number(valor) : null;
   const serie = sid ? serieDe(sid) : null;
-  const numero = serie ? $('edNumero').value.trim() : '';
+  const numero = $('edNumero').value.trim();
   const detalle = $('edDetalle').value.trim().slice(0, 60);
   const base = serie ? serie.nombre : $('edTitulo').value.trim();
-  return { sid, serie, numero, detalle, base, titulo: armarTitulo(base, numero, detalle) };
+  return { sid, serie, nueva, numero, detalle, base, titulo: armarTitulo(base, numero, detalle) };
 }
 
 function actualizarEdicion() {
   const d = datosEdicion();
   $('edBloqueTitulo').classList.toggle('oculto', !!d.serie);
-  $('edBloqueNumero').classList.toggle('oculto', !d.serie);
   // Si se saca de una colección, propone el nombre que tenía como título
   if (!d.serie && !$('edTitulo').value.trim()) {
     const p = productoPorId(editandoPid);
@@ -1182,12 +1202,26 @@ async function guardarEdicion(pid) {
   if (!d.base) { avisar('Falta el título', 'mal'); $('edTitulo').focus(); return; }
   const precio = soloNumeros($('edPrecio').value);
   if (!precio || precio <= 0) { avisar('Poné un precio válido', 'mal'); $('edPrecio').focus(); return; }
+  let sid = d.sid;
+  if (d.nueva) {
+    try {
+      mostrarCargando('Creando la colección…');
+      const p = productoPorId(pid);
+      sid = (await coleccionPorNombre(d.base, 'Colecciones', p && p.imagen_url)).id;
+      ocultarCargando();
+    } catch (err) {
+      ocultarCargando();
+      console.error(err);
+      avisar('❌ ' + mensajeError(err), 'mal', 5000);
+      return;
+    }
+  }
   const cambios = {
     titulo: d.titulo.slice(0, 160),
-    serie_id: d.sid,
+    serie_id: sid,
     numero: d.numero || null,
     detalle: d.detalle || null,
-    categoria: $('edCategoria').value,
+    categoria: d.nueva ? 'Colecciones' : $('edCategoria').value,
     precio
   };
   await actualizarProducto(pid, cambios, '✏️ Publicación actualizada');

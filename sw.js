@@ -5,7 +5,7 @@
 //  Cada vez que subas cambios, aumentá VERSION.
 // =====================================================================
 
-const VERSION = 'puesto-v13';
+const VERSION = 'puesto-v14';
 const ARCHIVOS_APP = ['./', './index.html', './app.js', './titulos.js', './manifest.json', './icon-192.png', './icon-512.png', './logo.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (evento) => {
