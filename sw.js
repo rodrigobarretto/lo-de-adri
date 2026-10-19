@@ -5,8 +5,8 @@
 //  Cada vez que subas cambios, aumentá VERSION.
 // =====================================================================
 
-const VERSION = 'puesto-v9';
-const ARCHIVOS_APP = ['./', './index.html', './app.js', './manifest.json', './icon-192.png', './icon-512.png', './logo.png', './apple-touch-icon.png'];
+const VERSION = 'puesto-v10';
+const ARCHIVOS_APP = ['./', './index.html', './app.js', './titulos.js', './manifest.json', './icon-192.png', './icon-512.png', './logo.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (evento) => {
   evento.waitUntil(

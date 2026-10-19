@@ -25,6 +25,8 @@ const CATEGORIAS_PLURAL = {
   Diarios: '🗞️ Diarios',
   Revistas: '📰 Revistas',
   Colecciones: '📚 Colecciones',
+  Libros: '📕 Libros',
+  Figuritas: '🎴 Figuritas',
   Otros: '📦 Otros'
 };
 
@@ -32,6 +34,8 @@ const CATEGORIAS = {
   Diarios: '🗞️ Diario',
   Revistas: '📰 Revista',
   Colecciones: '📚 Colección',
+  Libros: '📕 Libro',
+  Figuritas: '🎴 Figuritas',
   Otros: '📦 Otro'
 };
 
@@ -50,6 +54,8 @@ const estado = {
   whatsapp: leerAjusteLocal('whatsapp') || WHATSAPP_POR_DEFECTO,
   diasSinRepetir: Number(leerAjusteLocal('dias_sin_repetir')) || 4,  // stock: no repetir antes de N días
   reservas: [],
+  titulosExtra: [],      // títulos que se fueron agregando (tabla "titulos")
+  editorial: '',         // editorial del título elegido en las sugerencias
   motivos: [],
   movimientos: [],
   tabReservas: 'activa',
@@ -128,6 +134,8 @@ function mensajeError(error) {
   if (/Failed to fetch|NetworkError|network/i.test(m)) return 'No hay internet. Probá de nuevo en un rato.';
   if (/row-level security|permission|not authorized|JWT|401|403/i.test(m)) return 'Este teléfono no tiene permiso. Llamá a Rodrigo.';
   if (/Payload too large|exceeded/i.test(m)) return 'La foto es muy pesada. Probá con otra.';
+  if (/FALTA_CLAVE_BUSQUEDA/.test(m)) return 'Falta activar la búsqueda en internet. Llamá a Rodrigo.';
+  if (/NO_ES_IMAGEN|NO_SE_PUDO_DESCARGAR|MUY_PESADA|URL_INVALIDA/.test(m)) return 'No se pudo traer esa foto. Probá con otra.';
   if (/NO_ALCANZA/.test(m)) return 'No hay tantos disponibles (puede haber reservados).';
   if (/TELEFONO_INVALIDO/.test(m)) return 'El teléfono no parece válido. Poné código de área y número.';
   if (/FALTA_NOMBRE/.test(m)) return 'Falta el nombre.';
@@ -142,6 +150,46 @@ function mensajeError(error) {
 function abrirWhatsApp(numero, texto) {
   const url = 'https://wa.me/' + (numero || '') + '?text=' + encodeURIComponent(texto);
   window.open(url, '_blank');
+}
+
+// =====================================================================
+//  MODO NOCHE (lo elige cada uno en su teléfono: dueño o cliente)
+// =====================================================================
+
+function temaGuardado() {
+  try { return localStorage.getItem('tema') || 'auto'; } catch (e) { return 'auto'; }
+}
+
+function temaActualEsOscuro() {
+  const t = document.documentElement.getAttribute('data-theme');
+  if (t) return t === 'dark';
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function aplicarTema(tema) {
+  if (tema === 'dark' || tema === 'light') document.documentElement.setAttribute('data-theme', tema);
+  else document.documentElement.removeAttribute('data-theme');
+  try { localStorage.setItem('tema', tema); } catch (e) {}
+  const oscuro = temaActualEsOscuro();
+  $('btnTema').textContent = oscuro ? '☀️' : '🌙';
+  $('btnTema').setAttribute('aria-label', oscuro ? 'Cambiar a modo día' : 'Cambiar a modo noche');
+  document.querySelectorAll('#elegirTema button').forEach(b => b.classList.toggle('activo', b.dataset.tema === tema));
+}
+
+// Botón del encabezado: alterna día / noche
+function alternarTema() {
+  aplicarTema(temaActualEsOscuro() ? 'light' : 'dark');
+}
+
+// Ajustes: automático / día / noche
+function elegirTema(tema) {
+  aplicarTema(tema);
+}
+
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (temaGuardado() === 'auto') aplicarTema('auto');
+  });
 }
 
 // =====================================================================
@@ -317,6 +365,7 @@ function elegirSerie(id) {
 }
 
 async function prepararCarga() {
+  traerTitulosExtra();
   try {
     await traerProductos();
     if (estado.serieElegida && estado.serieElegida !== 'nueva' && !serieDe(estado.serieElegida)) estado.serieElegida = null;
@@ -386,6 +435,8 @@ function limpiarFormulario() {
   $('nuevoNumero').value = '';
   $('nuevaCantidad').textContent = '1';
   $('nombreSerieNueva').value = '';
+  $('nuevaDescripcion').value = '';
+  estado.editorial = '';
   // En una colección deja el precio puesto: casi siempre el siguiente número cuesta lo mismo
   if (estado.modo !== 'serie') $('nuevoPrecio').value = '';
   estado.fotoArchivo = null;
@@ -427,14 +478,16 @@ async function guardarProducto() {
       imagen_url: imagenUrl,
       tipo: estado.tipo,
       visitas: 0,
-      cantidad: Math.max(1, Number($('nuevaCantidad').textContent) || 1)
+      cantidad: Math.max(1, Number($('nuevaCantidad').textContent) || 1),
+      descripcion: $('nuevaDescripcion').value.trim().slice(0, 300) || null,
+      editorial: estado.editorial || null
     };
 
     let serie = null;
     if (enSerie) {
       if (estado.serieElegida === 'nueva') {
         const { data, error } = await db.from('series')
-          .insert([{ nombre: nombreNueva, categoria: estado.categoria, portada_url: imagenUrl }])
+          .insert([{ nombre: nombreNueva, categoria: estado.categoria, portada_url: imagenUrl, editorial: estado.editorial || null }])
           .select()
           .single();
         if (error) throw error;
@@ -447,6 +500,7 @@ async function guardarProducto() {
       fila.serie_id = serie.id;
       fila.numero = numero;
       fila.categoria = serie.categoria;
+      fila.editorial = fila.editorial || serie.editorial || null;
       fila.titulo = serie.nombre + ' N° ' + numero;
     } else {
       fila.titulo = titulo;
@@ -454,6 +508,9 @@ async function guardarProducto() {
 
     const { error } = await db.from('productos').insert([fila]);
     if (error) throw error;
+
+    // Si el título no estaba en la lista, queda guardado para las próximas veces
+    guardarTituloSiEsNuevo(enSerie ? serie.nombre : titulo, fila.categoria, enSerie);
 
     ocultarCargando();
     limpiarFormulario();
@@ -471,6 +528,302 @@ async function guardarProducto() {
   } finally {
     boton.disabled = false;
   }
+}
+
+// =====================================================================
+//  TÍTULOS: sugerencias mientras se escribe
+// =====================================================================
+
+function normalizar(t) {
+  return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function traerTitulosExtra() {
+  try {
+    const { data, error } = await db.from('titulos').select('*').order('nombre', { ascending: true });
+    if (!error) estado.titulosExtra = data || [];
+  } catch (e) { /* sin conexión: se usan solo los de la lista */ }
+}
+
+// Todos los títulos conocidos: lista base + los que se agregaron + colecciones ya cargadas
+function todosLosTitulos() {
+  const lista = [];
+  const vistos = new Set();
+  const sumar = (nombre, categoria, editorial, coleccion, origen) => {
+    const k = normalizar(nombre);
+    if (!k || vistos.has(k)) return;
+    vistos.add(k);
+    lista.push({ nombre, categoria, editorial: editorial || '', coleccion: !!coleccion, origen, clave: k });
+  };
+  estado.series.forEach(x => sumar(x.nombre, x.categoria, x.editorial, true, 'serie'));
+  estado.titulosExtra.forEach(x => sumar(x.nombre, x.categoria, x.editorial, x.es_coleccion, 'propio'));
+  (typeof TITULOS_BASE !== 'undefined' ? TITULOS_BASE : []).forEach(([n, c, e, col]) => sumar(n, c, e, col === 1, 'base'));
+  return lista;
+}
+
+function buscarTitulos(texto, max = 6) {
+  const q = normalizar(texto);
+  if (q.length < 2) return [];
+  const palabras = q.split(' ');
+  return todosLosTitulos()
+    .map(t => {
+      let p = -1;
+      if (t.clave.startsWith(q)) p = 0;
+      else if (t.clave.split(' ').some(w => w.startsWith(q))) p = 1;
+      else if (palabras.every(w => t.clave.includes(w))) p = 2;
+      if (p >= 0 && t.origen === 'serie') p -= 0.5;   // lo que ya tiene cargado, primero
+      return { t, p };
+    })
+    .filter(x => x.p >= 0)
+    .sort((a, b) => a.p - b.p || a.t.nombre.length - b.t.nombre.length)
+    .slice(0, max)
+    .map(x => x.t);
+}
+
+let sugerenciasActuales = [];
+
+function resaltar(nombre, texto) {
+  const q = normalizar(texto);
+  const i = normalizar(nombre).indexOf(q);
+  // normalizar conserva la longitud salvo signos: si no coincide la posición, sin resaltar
+  if (i < 0 || normalizar(nombre.slice(i, i + q.length)) !== q) return escapar(nombre);
+  return escapar(nombre.slice(0, i)) + '<mark>' + escapar(nombre.slice(i, i + q.length)) + '</mark>' + escapar(nombre.slice(i + q.length));
+}
+
+function sugerirTitulo(input) {
+  const caja = $('sug-' + input.id);
+  const texto = input.value.trim();
+  sugerenciasActuales = buscarTitulos(texto);
+  if (texto.length < 2) { caja.innerHTML = ''; return; }
+  const exacto = sugerenciasActuales.some(t => t.clave === normalizar(texto));
+  caja.innerHTML = sugerenciasActuales.map((t, i) => `
+      <button type="button" class="sugerencia" role="option" onmousedown="event.preventDefault()" onclick="elegirSugerencia('${input.id}', ${i})">
+        <span class="t">${resaltar(t.nombre, texto)}${t.editorial ? `<small>${escapar(t.editorial)}</small>` : ''}</span>
+        <span class="tag-cat">${t.origen === 'serie' ? '📚 Ya cargada' : escapar(CATEGORIAS[t.categoria] || t.categoria)}</span>
+      </button>`).join('') +
+    (exacto ? '' : `<button type="button" class="sugerencia nuevo-titulo" onmousedown="event.preventDefault()" onclick="ocultarSugerencias($('${input.id}'), true)">
+        <span class="t">➕ Usar "${escapar(texto)}"<small>Es nuevo: queda guardado en la lista</small></span></button>`);
+}
+
+function ocultarSugerencias(input, ya) {
+  const caja = $('sug-' + input.id);
+  if (ya) { caja.innerHTML = ''; return; }
+  setTimeout(() => { caja.innerHTML = ''; }, 150);
+}
+
+function marcarCategoria(cat) {
+  if (!CATEGORIAS[cat]) return;
+  estado.categoria = cat;
+  document.querySelectorAll('#elegirCategoria button').forEach(b => b.classList.toggle('activo', b.dataset.valor === cat));
+}
+
+// Elegir una sugerencia: si tiene números (colección o revista), pasa a "Un número"
+function elegirSugerencia(inputId, i) {
+  const t = sugerenciasActuales[i];
+  if (!t) return;
+  $('sug-' + inputId).innerHTML = '';
+  estado.editorial = t.editorial || '';
+  marcarCategoria(t.categoria);
+
+  if (t.coleccion) {
+    const existente = estado.series.find(x => normalizar(x.nombre) === t.clave);
+    document.querySelectorAll('#elegirModo button').forEach(b => b.classList.toggle('activo', b.dataset.valor === 'serie'));
+    estado.modo = 'serie';
+    if (existente) {
+      estado.serieElegida = existente.id;
+    } else {
+      estado.serieElegida = 'nueva';
+      $('nombreSerieNueva').value = t.nombre;
+    }
+    actualizarFormularioModo();
+    setTimeout(() => $('nuevoNumero').focus(), 150);
+  } else {
+    document.querySelectorAll('#elegirModo button').forEach(b => b.classList.toggle('activo', b.dataset.valor === 'suelto'));
+    estado.modo = 'suelto';
+    $('nuevoTitulo').value = t.nombre;
+    actualizarFormularioModo();
+    setTimeout(() => $('nuevoPrecio').focus(), 150);
+  }
+}
+
+// Si se escribió un título que no está en ninguna lista, se guarda
+async function guardarTituloSiEsNuevo(nombre, categoria, coleccion) {
+  const k = normalizar(nombre);
+  const base = typeof TITULOS_BASE !== 'undefined' ? TITULOS_BASE : [];
+  if (!k || base.some(t => normalizar(t[0]) === k) || estado.titulosExtra.some(t => normalizar(t.nombre) === k)) return;
+  const fila = { nombre: nombre.trim().slice(0, 80), categoria, editorial: estado.editorial || null, es_coleccion: !!coleccion };
+  const { error } = await db.from('titulos').insert([fila]);
+  if (!error) estado.titulosExtra.push(fila);
+}
+
+// =====================================================================
+//  BUSCAR FOTO Y DESCRIPCIÓN EN INTERNET
+// =====================================================================
+
+const busqueda = { resultados: null, foto: null, desc: null, destino: null };
+
+async function invocarBusqueda(cuerpo) {
+  const { data, error } = await db.functions.invoke('buscar-foto', { body: cuerpo });
+  if (error) {
+    let codigo = error.message || 'error';
+    try { const j = await error.context.json(); if (j && j.error) codigo = j.error; } catch (e) {}
+    throw new Error(codigo);
+  }
+  return data;
+}
+
+// Arma lo que se busca con lo que ya se cargó en el formulario
+function consultaDeLaCarga() {
+  if (estado.modo === 'serie') {
+    const serie = estado.serieElegida && estado.serieElegida !== 'nueva' ? serieDe(estado.serieElegida) : null;
+    const nombre = serie ? serie.nombre : $('nombreSerieNueva').value.trim();
+    const numero = $('nuevoNumero').value.trim();
+    const editorial = estado.editorial || (serie && serie.editorial) || '';
+    if (!nombre) return '';
+    return [nombre, numero ? 'N° ' + numero : '', editorial].filter(Boolean).join(' ');
+  }
+  return [$('nuevoTitulo').value.trim(), estado.editorial].filter(Boolean).join(' ');
+}
+
+function buscarFotoParaCarga() {
+  const q = consultaDeLaCarga();
+  if (!q) { avisar('Primero escribí qué es (paso 2)', 'mal'); window.scrollTo({ top: 300, behavior: 'smooth' }); return; }
+  if (estado.modo === 'serie' && !$('nuevoNumero').value.trim()) { avisar('Poné el número así busco la tapa correcta', 'mal'); $('nuevoNumero').focus(); return; }
+  abrirBusqueda(q, { tipo: 'carga' });
+}
+
+function buscarFotoParaProducto(pid) {
+  const p = productoPorId(pid);
+  if (!p) return;
+  abrirBusqueda([p.titulo, p.editorial].filter(Boolean).join(' '), { tipo: 'producto', pid: Number(pid) });
+}
+
+async function abrirBusqueda(q, destino) {
+  busqueda.resultados = null; busqueda.foto = null; busqueda.desc = null; busqueda.destino = destino;
+  mostrarHoja(`
+    <h3>🔎 Buscando…</h3>
+    <p class="info">${escapar(q)}</p>
+    <div class="resultados-fotos">${'<button disabled></button>'.repeat(6)}</div>`);
+  try {
+    busqueda.resultados = await invocarBusqueda({ q });
+    dibujarBusqueda(q);
+  } catch (err) {
+    console.error(err);
+    mostrarHoja(`
+      <h3>No se pudo buscar</h3>
+      <p class="info">${escapar(mensajeError(err))}</p>
+      <div class="acciones"><button class="accion cerrar" onclick="cerrarHoja()">Cerrar</button></div>`);
+  }
+}
+
+function dibujarBusqueda(q) {
+  const r = busqueda.resultados || { imagenes: [], descripciones: [] };
+  if (!busqueda.desc && r.descripciones.length) busqueda.desc = 0;
+  const fotos = r.imagenes.map((im, i) => `
+      <button class="${busqueda.foto === i ? 'activo' : ''}" onclick="elegirFotoBuscada(${i})" aria-label="Foto ${i + 1} de ${escapar(im.fuente)}">
+        <img src="${escapar(im.miniatura)}" alt="" loading="lazy" referrerpolicy="no-referrer">
+        <span class="fuente">${escapar(im.fuente)}</span>
+      </button>`).join('');
+  const descs = r.descripciones.map((d, i) => `
+      <button class="${busqueda.desc === i ? 'activo' : ''}" onclick="elegirDescBuscada(${i})">
+        ${escapar(d.texto)}<small>${escapar(d.fuente)}</small>
+      </button>`).join('');
+  mostrarHoja(`
+    <h3>Elegí la tapa</h3>
+    <p class="info">${escapar(q)}</p>
+    ${fotos ? `<div class="resultados-fotos">${fotos}</div>` : '<p class="vacio">No encontré fotos. Probá sacándole una foto.</p>'}
+    ${descs ? `<p class="mini">Descripción (tocá la que mejor la describe)</p><div class="opciones-desc">${descs}
+      <button class="${busqueda.desc === -1 ? 'activo' : ''}" onclick="elegirDescBuscada(-1)">Sin descripción</button></div>` : ''}
+    <div class="acciones">
+      <button class="btn-principal" onclick="usarBusqueda()" ${busqueda.foto === null && (busqueda.desc === null || busqueda.desc < 0) ? 'disabled' : ''}>✅ Usar esto</button>
+      <button class="accion cerrar" onclick="cerrarHoja()">Cancelar</button>
+    </div>`);
+}
+
+function elegirFotoBuscada(i) {
+  busqueda.foto = busqueda.foto === i ? null : i;
+  const scroll = $('hoja').scrollTop;
+  dibujarBusqueda(document.querySelector('.hoja .info') ? document.querySelector('.hoja .info').textContent : '');
+  $('hoja').scrollTop = scroll;
+}
+
+function elegirDescBuscada(i) {
+  busqueda.desc = i;
+  const scroll = $('hoja').scrollTop;
+  dibujarBusqueda(document.querySelector('.hoja .info') ? document.querySelector('.hoja .info').textContent : '');
+  $('hoja').scrollTop = scroll;
+}
+
+async function traerFotoElegida() {
+  const im = busqueda.resultados.imagenes[busqueda.foto];
+  let blob;
+  try {
+    blob = await invocarBusqueda({ descargar: im.url });
+  } catch (e) {
+    // Si la original no se deja bajar, se usa la vista previa (más chica)
+    blob = await invocarBusqueda({ descargar: im.miniatura });
+  }
+  if (!(blob instanceof Blob)) throw new Error('NO_ES_IMAGEN');
+  return blob;
+}
+
+async function usarBusqueda() {
+  const r = busqueda.resultados;
+  const texto = busqueda.desc !== null && busqueda.desc >= 0 ? r.descripciones[busqueda.desc].texto : '';
+  mostrarCargando(busqueda.foto !== null ? 'Trayendo la foto…' : 'Guardando…');
+  try {
+    let blob = null;
+    if (busqueda.foto !== null) blob = await comprimirFoto(await traerFotoElegida());
+
+    if (busqueda.destino.tipo === 'carga') {
+      if (blob) {
+        estado.fotoArchivo = blob;
+        if (estado.fotoPreviewUrl) URL.revokeObjectURL(estado.fotoPreviewUrl);
+        estado.fotoPreviewUrl = URL.createObjectURL(blob);
+        $('fotoCaja').innerHTML = '<img src="' + estado.fotoPreviewUrl + '" alt="Foto elegida">';
+      }
+      if (texto) $('nuevaDescripcion').value = texto;
+      ocultarCargando();
+      cerrarHoja();
+      avisar('✅ Listo. Revisá y tocá Guardar');
+    } else {
+      const pid = busqueda.destino.pid;
+      const cambios = {};
+      if (blob) cambios.imagen_url = await subirFoto(blob);
+      if (texto) cambios.descripcion = texto;
+      const viejo = productoPorId(pid);
+      const { error } = await db.from('productos').update(cambios).eq('id', pid);
+      if (error) throw error;
+      // Borra la foto anterior para no llenar el espacio
+      const rutaVieja = blob && viejo ? rutaDeFoto(viejo.imagen_url) : null;
+      if (rutaVieja) db.storage.from(BUCKET).remove([rutaVieja]).catch(() => {});
+      ocultarCargando();
+      cerrarHoja();
+      avisar('✅ Ficha actualizada');
+      refrescar();
+    }
+  } catch (err) {
+    console.error(err);
+    ocultarCargando();
+    avisar('❌ ' + mensajeError(err), 'mal', 5000);
+  }
+}
+
+function pantallaDescripcion(pid) {
+  const p = productoPorId(pid);
+  $('hojaContenido').innerHTML = `
+    <h3>📝 Descripción</h3>
+    <p class="info">${escapar(p.titulo)}</p>
+    <textarea id="descEditada" rows="4" maxlength="300" placeholder="De qué trata, en una o dos líneas">${escapar(p.descripcion || '')}</textarea>
+    <div class="acciones espacio-arriba">
+      <button class="btn-principal" onclick="guardarDescripcion(${Number(pid)})">✅ Guardar</button>
+      <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Cancelar</button>
+    </div>`;
+  $('hoja').scrollTop = 0;
+}
+
+async function guardarDescripcion(pid) {
+  await actualizarProducto(pid, { descripcion: $('descEditada').value.trim().slice(0, 300) || null }, '📝 Descripción guardada');
 }
 
 // =====================================================================
@@ -627,6 +980,7 @@ function dibujarHoja(id) {
   $('hojaContenido').innerHTML = `
     ${p.imagen_url ? `<img src="${escapar(p.imagen_url)}" alt="">` : ''}
     <h3>${escapar(p.titulo)}</h3>
+    ${p.descripcion ? `<p class="descripcion-detalle">${escapar(p.descripcion)}</p>` : ''}
     <p class="info">${plata(p.precio)} · ${escapar(CATEGORIAS[p.categoria] || p.categoria)}
       ${pedidos > 0 ? ' · ⭐ ' + pedidos + ' punto' + (pedidos === 1 ? '' : 's') + ' de interés' : ''}</p>
     <div class="stock-linea">
@@ -644,6 +998,8 @@ function dibujarHoja(id) {
     </div>
     <div class="acciones">
       <button class="accion" onclick="pantallaPrecio(${pid})">💲 Cambiar el precio</button>
+      <button class="accion" onclick="buscarFotoParaProducto(${pid})">🔎 Buscar foto y descripción en internet</button>
+      <button class="accion" onclick="pantallaDescripcion(${pid})">📝 ${p.descripcion ? 'Cambiar la descripción' : 'Agregar descripción'}</button>
       ${nuevo
         ? `<button class="accion" onclick="cambiarTipo(${pid}, 'stock')">📦 Pasar al archivo</button>`
         : `<button class="accion" onclick="cambiarTipo(${pid}, 'nuevo')">✨ Marcar como nuevo otra vez</button>`}
@@ -2340,6 +2696,7 @@ function verProducto(id) {
     ${esNovedad(p) ? '<span class="etiqueta nuevo">✨ Recién llegado</span>' : ''}
     <h3>${escapar(p.titulo)}</h3>
     <p class="precio-detalle">${plata(p.precio)}</p>
+    ${p.descripcion ? `<p class="descripcion-detalle">${escapar(p.descripcion)}</p>` : ''}
     <div class="acciones">
       ${disp
         ? `<button class="btn-principal" onclick="abrirPedido(${Number(p.id)})">📌 Reservar</button>`
@@ -2433,6 +2790,7 @@ function arrancarAdmin() {
 }
 
 async function iniciar() {
+  aplicarTema(temaGuardado());
   aplicarNombre();
   cargarAjustes();
 
