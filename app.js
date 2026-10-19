@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '20';                // subir junto con VERSION de sw.js
+const VERSION_APP = '21';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 // Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
@@ -136,6 +136,23 @@ function diasDesde(fechaIso) {
 }
 
 // "nuevo" solo vale durante DIAS_NOVEDAD; después pasa solo al archivo
+function esProximo(p) { return p && p.tipo === 'proximo'; }
+
+// "sale el 15/11" o "sale pronto"
+function textoSalida(p) {
+  if (!p.fecha_salida) return 'Sale pronto';
+  const [y, m, d] = String(p.fecha_salida).split('-').map(Number);
+  const f = new Date(y, m - 1, d);
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  if (f < hoy) return 'Sale en estos días';
+  return 'Sale el ' + f.toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
+}
+
+// Pedidos anticipados abiertos de algo que todavía no salió
+function pedidosAnticipados(pid) {
+  return estado.reservas.filter(r => Number(r.producto_id) === Number(pid) && r.tipo === 'solicitud' && (r.estado === 'pendiente' || r.estado === 'activa'));
+}
+
 function esNovedad(p) {
   return p.tipo === 'nuevo' && diasDesde(p.created_at) < DIAS_NOVEDAD;
 }
@@ -384,6 +401,8 @@ function elegirTipo(boton) {
   document.querySelectorAll('#elegirTipo button').forEach(b => b.classList.remove('activo'));
   boton.classList.add('activo');
   estado.tipo = boton.dataset.valor;
+  $('bloqueSalida').classList.toggle('oculto', estado.tipo !== 'proximo');
+  if (estado.tipo === 'proximo') $('nuevaCantidad').textContent = '0';
 }
 
 function elegirModo(boton) {
@@ -623,8 +642,9 @@ async function guardarProducto() {
       categoria: estado.categoria,
       imagen_url: imagenUrl,
       tipo: estado.tipo,
+      fecha_salida: estado.tipo === 'proximo' ? ($('nuevaSalida').value || null) : null,
       visitas: 0,
-      cantidad: Math.max(0, Number($('nuevaCantidad').textContent) || 0),
+      cantidad: estado.tipo === 'proximo' ? 0 : Math.max(0, Number($('nuevaCantidad').textContent) || 0),
       descripcion: $('nuevaDescripcion').value.trim().slice(0, 300) || null,
       fotos_extra: extrasUrls,
       editorial: estado.editorial || null
@@ -1198,6 +1218,12 @@ function filtrarPorTexto(lista, texto) {
 }
 
 function etiquetasDe(p) {
+  if (esProximo(p)) {
+    const n = pedidosAnticipados(p.id).reduce((s, r) => s + Number(r.cantidad), 0);
+    return `<span class="etiqueta prox">🔜 ${escapar(textoSalida(p))}</span>` +
+      (n ? `<span class="etiqueta res">📌 ${n} pedido${n === 1 ? '' : 's'}</span>` : '') +
+      (p.serie_id ? '<span class="etiqueta">📚 Colección</span>' : '');
+  }
   const cant = cantidadDe(p);
   const res = reservadoDe(p);
   const stock = cant === 0
@@ -1213,8 +1239,9 @@ function etiquetasDe(p) {
 function listaStockFiltrada() {
   let lista = estado.productos;
   if (estado.filtro === 'novedad') lista = lista.filter(p => esNovedad(p) && cantidadDe(p) > 0);
-  if (estado.filtro === 'archivo') lista = lista.filter(p => !esNovedad(p) && cantidadDe(p) > 0);
-  if (estado.filtro === 'agotado') lista = lista.filter(p => cantidadDe(p) === 0);
+  if (estado.filtro === 'archivo') lista = lista.filter(p => !esNovedad(p) && !esProximo(p) && cantidadDe(p) > 0);
+  if (estado.filtro === 'agotado') lista = lista.filter(p => cantidadDe(p) === 0 && !esProximo(p));
+  if (estado.filtro === 'proximo') lista = lista.filter(esProximo);
   return filtrarPorTexto(lista, $('buscador').value);
 }
 
@@ -1233,7 +1260,7 @@ function dibujarStock() {
   $('listaStock').innerHTML = lista.map(p => {
     const elegido = seleccion.activa && seleccion.ids.has(Number(p.id));
     return `
-    <button class="item ${cantidadDe(p) === 0 ? 'agotado' : ''} ${elegido ? 'elegido' : ''}" data-id="${Number(p.id)}" onclick="tocarItem(${Number(p.id)})">
+    <button class="item ${cantidadDe(p) === 0 && !esProximo(p) ? 'agotado' : ''} ${elegido ? 'elegido' : ''}" data-id="${Number(p.id)}" onclick="tocarItem(${Number(p.id)})">
       ${seleccion.activa ? `<span class="marca">${elegido ? '✓' : ''}</span>` : ''}
       ${p.imagen_url
         ? `<img src="${escapar(p.imagen_url)}" alt="" loading="lazy">`
@@ -1294,7 +1321,16 @@ function dibujarHoja(id) {
     ${p.descripcion ? `<p class="descripcion-detalle">${escapar(p.descripcion)}</p>` : ''}
     <p class="info">${plata(p.precio)} · ${escapar(CATEGORIAS[p.categoria] || p.categoria)}
       ${pedidos > 0 ? ' · ⭐ ' + pedidos + ' punto' + (pedidos === 1 ? '' : 's') + ' de interés' : ''}</p>
-    <div class="stock-linea">
+    ${esProximo(p) ? (() => {
+      const ped = pedidosAnticipados(p.id);
+      const n = ped.reduce((s, r) => s + Number(r.cantidad), 0);
+      return `<div class="caja-proximo">
+        <b>🔜 Próximamente · ${escapar(textoSalida(p))}</b>
+        <span>${n ? `📌 ${n} ejemplar${n === 1 ? '' : 'es'} reservado${n === 1 ? '' : 's'} por ${ped.length} persona${ped.length === 1 ? '' : 's'}: <b>pedí al menos ${n}</b> a la editorial.` : 'Todavía nadie lo reservó.'}</span>
+        <button class="btn-principal" onclick="pantallaLanzar(${pid})">🚀 Ya salió: cargar los que llegaron</button>
+      </div>`;
+    })() : ''}
+    <div class="stock-linea ${esProximo(p) ? 'oculto' : ''}">
       <span>📦 Hay ${cant}</span>
       ${res ? `<span>📌 ${res} reservad${res === 1 ? 'o' : 'os'}</span>` : ''}
       <span class="${disp ? 'ok' : 'no'}">${disp ? `✅ ${disp} disponible${disp === 1 ? '' : 's'}` : '🚫 Nada disponible'}</span>
@@ -1305,6 +1341,8 @@ function dibujarHoja(id) {
       <button class="vender" onclick="pantallaVenta(${pid})" ${disp ? '' : 'disabled'}><span class="ic">🛒</span>Vendí</button>
       ${disp
         ? `<button class="reservar" onclick="pantallaReserva(${pid}, null, 'producto')"><span class="ic">📌</span>Reservar</button>`
+        : esProximo(p)
+        ? `<button class="reservar" onclick="pantallaReserva(${pid}, null, 'producto')"><span class="ic">📌</span>Reservar anticipado</button>`
         : `<button class="reservar" onclick="pantallaReserva(${pid}, null, 'producto')"><span class="ic">📦</span>Pedir a editorial</button>`}
       <button onclick="pantallaAjuste(${pid})" ${disp ? '' : 'disabled'}><span class="ic">➖</span>Dar de baja</button>
       <button onclick="pantallaIngreso(${pid})"><span class="ic">➕</span>Llegaron más</button>
@@ -1316,9 +1354,10 @@ function dibujarHoja(id) {
       <button class="accion" onclick="pantallaFotos(${pid})">🖼️ Fotos (${fotosDe(p).length} de ${MAX_FOTOS})</button>
       <button class="accion" onclick="buscarFotoParaProducto(${pid})">🔎 Buscar fotos y descripción en internet</button>
       <button class="accion" onclick="pantallaDescripcion(${pid})">📝 ${p.descripcion ? 'Cambiar la descripción' : 'Agregar descripción'}</button>
-      ${nuevo
+      ${esProximo(p) ? '' : nuevo
         ? `<button class="accion" onclick="cambiarTipo(${pid}, 'stock')">📦 Pasar al archivo</button>`
         : `<button class="accion" onclick="cambiarTipo(${pid}, 'nuevo')">✨ Marcar como nuevo otra vez</button>`}
+      ${esProximo(p) ? '' : `<button class="accion" onclick="cambiarTipo(${pid}, 'proximo')">🔜 Pasar a Próximamente</button>`}
       ${disp ? `<button class="accion wa" onclick="compartirProducto(${pid})">📲 Mandar esta por WhatsApp</button>` : ''}
       ${p.serie_id && serieDe(p.serie_id) ? `
         <button class="accion wa" onclick="compartirSerie(${Number(p.serie_id)})">📚 Mandar toda la colección</button>
@@ -1401,6 +1440,17 @@ function pantallaEditar(pid) {
 
       <p class="titulo-final" id="edTituloFinal"></p>
 
+      <label class="mini" for="edEstado">Estado</label>
+      <select id="edEstado" onchange="$('edBloqueSalida').classList.toggle('oculto', this.value !== 'proximo')">
+        <option value="nuevo" ${p.tipo === 'nuevo' ? 'selected' : ''}>✨ Nuevo</option>
+        <option value="stock" ${p.tipo === 'stock' ? 'selected' : ''}>📦 Archivo</option>
+        <option value="proximo" ${p.tipo === 'proximo' ? 'selected' : ''}>🔜 Próximamente (todavía no salió)</option>
+      </select>
+      <div id="edBloqueSalida" class="${p.tipo === 'proximo' ? '' : 'oculto'}">
+        <label class="mini" for="edSalida">¿Cuándo sale? <span class="opcional">(si sabés)</span></label>
+        <input type="date" id="edSalida" value="${escapar(p.fecha_salida || '')}">
+      </div>
+
       <label class="mini" for="edCategoria">Tipo</label>
       <select id="edCategoria">${opcionesCat}</select>
 
@@ -1465,6 +1515,8 @@ async function guardarEdicion(pid) {
     numero: d.numero || null,
     detalle: d.detalle || null,
     categoria: d.nueva ? 'Colecciones' : $('edCategoria').value,
+    tipo: $('edEstado').value,
+    fecha_salida: $('edEstado').value === 'proximo' ? ($('edSalida').value || null) : null,
     precio
   };
   await actualizarProducto(pid, cambios, '✏️ Publicación actualizada');
@@ -1521,7 +1573,45 @@ async function guardarPrecio(id) {
 async function cambiarTipo(id, tipo) {
   // Al volver a "nuevo" reinicia los 7 días
   const cambios = tipo === 'nuevo' ? { tipo, created_at: new Date().toISOString() } : { tipo };
-  await actualizarProducto(id, cambios, tipo === 'nuevo' ? '✨ Marcada como nueva' : '📦 Pasó al archivo');
+  await actualizarProducto(id, cambios, tipo === 'nuevo' ? '✨ Marcada como nueva' : tipo === 'proximo' ? '🔜 Pasó a Próximamente' : '📦 Pasó al archivo');
+}
+
+// ---------- Salió algo que estaba en Próximamente ----------
+
+function pantallaLanzar(pid) {
+  const p = productoPorId(pid);
+  const n = pedidosAnticipados(pid).reduce((s, r) => s + Number(r.cantidad), 0);
+  mostrarHoja(`
+    <h3>🚀 Salió ${escapar(p.titulo)}</h3>
+    <p class="info">¿Cuántos ejemplares llegaron en total?${n ? `<br>Hay ${n} reservado${n === 1 ? '' : 's'} de antes: esos quedan guardados para cada cliente y el resto queda a la venta.` : ''}</p>
+    ${selectorCantidad('cantHoja', Math.max(n, 1), 999)}
+    <div class="acciones espacio-arriba">
+      <button class="btn-principal" onclick="lanzarProducto(${Number(pid)})">✅ Llegaron <span data-cant-de="cantHoja">${Math.max(n, 1)}</span></button>
+      <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Cancelar</button>
+    </div>`);
+  $('cantHoja').dataset.min = String(n);
+}
+
+async function lanzarProducto(pid) {
+  const llegaron = Number($('cantHoja').textContent) || 0;
+  mostrarCargando('Guardando…');
+  const { data, error } = await db.rpc('lanzar_producto', { pid, llegaron });
+  ocultarCargando();
+  if (error) {
+    console.error(error);
+    avisar(/NO_ALCANZA_PEDIDOS/.test(error.message || '') ? 'Llegaron menos de los que ya están reservados.' : '❌ ' + mensajeError(error), 'mal', 5000);
+    return;
+  }
+  const n = Number(data) || 0;
+  mostrarHoja(`
+    <div class="exito">🚀</div>
+    <h3>¡Ya está a la venta!</h3>
+    <p class="info">Quedó como novedad.${n ? `<br>Los ${n} reservados ya están guardados para cada cliente: avisales desde 📌 Reservas.` : ''}</p>
+    <div class="acciones">
+      ${n ? `<button class="btn-principal" onclick="cerrarHoja(); irA('reservas')">📌 Ir a Reservas</button>` : ''}
+      <button class="accion cerrar" onclick="cerrarHoja()">Listo</button>
+    </div>`);
+  refrescar();
 }
 
 async function actualizarProducto(id, cambios, mensajeOk) {
@@ -2088,9 +2178,24 @@ function dibujarReservas() {
     solicitud: 'No hay ejemplares para pedir a la editorial.',
     cerrada: 'Todavía no hay nada cerrado.'
   };
-  $('listaReservas').innerHTML = (estado.tabReservas === 'solicitud' && lista.length
-      ? '<p class="ayuda-campo">Son ejemplares que pidieron y no hay en el puesto. Pedilos a la editorial y, cuando lleguen, tocá <b>📦 Llegó</b>.</p>' : '') +
+  $('listaReservas').innerHTML = (estado.tabReservas === 'solicitud' && lista.length ? resumenParaPedir(lista) : '') +
     (lista.length ? lista.map(tarjetaReserva).join('') : `<p class="vacio">${vacio[estado.tabReservas]}</p>`);
+}
+
+// Cuántos hay que pedir a la editorial de cada cosa
+function resumenParaPedir(lista) {
+  const porProducto = {};
+  lista.forEach(r => { porProducto[r.producto_id] = (porProducto[r.producto_id] || 0) + Number(r.cantidad); });
+  const filas = Object.keys(porProducto).map(id => {
+    const p = productoPorId(id);
+    if (!p) return '';
+    return `<div class="fila-pedir"><span>${esProximo(p) ? '🔜' : '📦'} ${escapar(p.titulo)}${esProximo(p) ? `<small>${escapar(textoSalida(p))}</small>` : ''}</span><b>${porProducto[id]}</b></div>`;
+  }).join('');
+  return `<div class="tarjeta resumen-pedir">
+      <p class="paso">📋 Para pedir a la editorial</p>
+      ${filas}
+      <p class="ayuda-campo">Lo que está en 🔜 Próximamente: cuando salga, tocalo en "Ver lo que tengo" → 🚀 Ya salió. Lo demás: 📦 Llegó en cada pedido.</p>
+    </div>`;
 }
 
 // Plata de una reserva: total, seña pedida, cobrado y lo que falta
@@ -2126,8 +2231,9 @@ function tarjetaReserva(r) {
       ${cobrar}
       <button class="wa" onclick="escribirCliente(${rid})">💬</button>`;
   } else if (r.estado === 'activa' && sol) {
+    const prox = esProximo(productoPorId(r.producto_id));
     botones = `
-      ${r.pedida_at
+      ${prox ? `<button class="ok" onclick="abrirHoja(${Number(r.producto_id)})">🚀 Ya salió</button>` : r.pedida_at
         ? `<button class="ok" onclick="pantallaLlego(${rid})">📦 Llegó</button>`
         : `<button class="ok" onclick="marcarPedida(${rid})">📞 Ya lo pedí</button>`}
       ${cobrar}${link}
@@ -2151,7 +2257,7 @@ function tarjetaReserva(r) {
       </div>
       <div class="reserva-cliente">👤 ${escapar(r.cliente)}<span class="tel">📞 ${escapar(telefonoLindo(r.telefono))}</span></div>
       <div class="reserva-chips">
-        ${sol ? `<span class="etiqueta sol">📦 Pedido a editorial${r.pedida_at ? ' · ya pedido' : ''}</span>` : ''}
+        ${sol ? (esProximo(p) ? `<span class="etiqueta prox">🔜 Reserva anticipada · ${escapar(textoSalida(p))}</span>` : `<span class="etiqueta sol">📦 Pedido a editorial${r.pedida_at ? ' · ya pedido' : ''}</span>`) : ''}
         ${cerrada
           ? `<span class="estado-cerrada">${r.estado === 'entregada' ? '🛍️ Entregada' : '❌ Cancelada'} ${fechaCierre}</span>${c.cobrado ? `<span class="etiqueta">Cobrado ${plata(c.cobrado)}</span>` : ''}`
           : chipPlata(r)}
@@ -2276,7 +2382,7 @@ async function llegoSolicitud(rid) {
 function pantallaReserva(pid, rid, desde) {
   const p = productoPorId(pid);
   const r = rid ? reservaPorId(rid) : null;
-  const solicitud = r ? r.tipo === 'solicitud' : disponible(p) < 1;
+  const solicitud = r ? r.tipo === 'solicitud' : (disponible(p) < 1 || esProximo(p));
   const max = solicitud ? 99 : disponible(p) + (r ? Number(r.cantidad) : 0);
   const volver = desde === 'producto' ? `dibujarHoja(${Number(pid)})` : 'cerrarHoja()';
   mostrarHoja(`
@@ -2312,7 +2418,7 @@ async function guardarReserva(pid, rid) {
   const tel = $('resTel').value.replace(/\D/g, '');
   const pagado = !!document.querySelector('#resPago button.activo[data-v="si"]');
   const p = productoPorId(pid);
-  const solicitud = disponible(p) < 1;
+  const solicitud = disponible(p) < 1 || esProximo(p);
   const nota = $('resNota').value.trim() || null;
   if (!nombre) { avisar('Falta el nombre', 'mal'); $('resNombre').focus(); return; }
   if (tel.length < 8) { avisar('Falta el teléfono con código de área', 'mal'); $('resTel').focus(); return; }
@@ -3562,7 +3668,7 @@ function entradasCatalogo(texto) {
   estado.productos.filter(coincide).forEach(p => {
     const serie = p.serie_id ? serieDe(p.serie_id) : null;
     if (serie) (grupos[serie.id] = grupos[serie.id] || []).push(p);
-    else entradas.push({ tipo: 'producto', p, nombre: p.titulo, categoria: p.categoria, precio: Number(p.precio), fecha: p.created_at, nuevo: esNovedad(p), hay: disponible(p) > 0 });
+    else entradas.push({ tipo: 'producto', p, nombre: p.titulo, categoria: p.categoria, precio: Number(p.precio), fecha: p.created_at, nuevo: esNovedad(p), proximo: esProximo(p), hay: disponible(p) > 0 || esProximo(p) });
   });
   Object.keys(grupos).forEach(id => {
     const serie = serieDe(id);
@@ -3574,7 +3680,8 @@ function entradasCatalogo(texto) {
       precio: Math.min(...items.map(p => Number(p.precio))),
       fecha: items.map(p => p.created_at).sort().pop(),
       nuevo: items.some(esNovedad),
-      hay: items.some(p => disponible(p) > 0)
+      proximo: items.some(esProximo),
+      hay: items.some(p => disponible(p) > 0 || esProximo(p))
     });
   });
   return entradas;
@@ -3586,6 +3693,8 @@ function dibujarFiltrosCliente() {
   const opciones = [{ valor: 'todo', texto: 'Todo', cant: todas.length }];
   const nuevos = todas.filter(e => e.nuevo).length;
   if (nuevos) opciones.push({ valor: 'nuevos', texto: '✨ Recién llegados', cant: nuevos });
+  const prox = todas.filter(e => e.proximo).length;
+  if (prox) opciones.push({ valor: 'proximos', texto: '🔜 Próximamente', cant: prox });
   Object.keys(CATEGORIAS_PLURAL).forEach(cat => {
     const cant = todas.filter(e => e.categoria === cat).length;
     if (cant) opciones.push({ valor: cat, texto: CATEGORIAS_PLURAL[cat], cant });
@@ -3626,7 +3735,7 @@ function tarjetaCatalogo(p, enSerie) {
     : `<div class="titulo">${escapar(p.titulo)}</div>`;
   return `
     <div class="producto">
-      ${esNovedad(p) ? '<span class="sello-nuevo">Nuevo</span>' : ''}
+      ${esNovedad(p) ? '<span class="sello-nuevo">Nuevo</span>' : esProximo(p) ? '<span class="sello-nuevo sello-prox">Próximamente</span>' : ''}
       ${fotosDe(p).length > 1 ? `<span class="sello-fotos">📷 ${fotosDe(p).length}</span>` : ''}
       <button class="ver-detalle" onclick="verProducto(${Number(p.id)})" aria-label="Ver ${escapar(p.titulo)}">
         ${p.imagen_url
@@ -3636,9 +3745,11 @@ function tarjetaCatalogo(p, enSerie) {
       <div class="cuerpo" onclick="if (event.target.tagName !== 'BUTTON') verProducto(${Number(p.id)})">
         ${titulo}
         ${disponible(p) > 0 && disponible(p) <= 2 && cantidadDe(p) >= 3 ? `<span class="ultimos">¡Quedan ${disponible(p)}!</span>` : ''}
-        ${disponible(p) > 0 ? '' : '<span class="sin-stock-cat">Sin stock · se encarga</span>'}
+        ${esProximo(p) ? `<span class="sale-cat">🔜 ${escapar(textoSalida(p))}</span>` : disponible(p) > 0 ? '' : '<span class="sin-stock-cat">Sin stock · se encarga</span>'}
         <div class="precio">${plata(p.precio)}</div>
-        ${disponible(p) > 0
+        ${esProximo(p)
+          ? `<button class="pedir anticipado" onclick="abrirPedido(${Number(p.id)})">📌 Reservar antes que salga</button>`
+          : disponible(p) > 0
           ? `<button class="pedir" onclick="abrirPedido(${Number(p.id)})">📌 Reservar</button>`
           : `<button class="pedir solicitar" onclick="abrirPedido(${Number(p.id)})">📦 Solicitar ejemplar</button>`}
       </div>
@@ -3652,11 +3763,11 @@ function tarjetaSerie(e) {
   const precios = new Set(e.items.map(p => Number(p.precio)));
   return `
     <button class="producto es-serie" onclick="abrirSerie(${Number(e.serie.id)})">
-      ${e.nuevo ? '<span class="sello-nuevo">Números nuevos</span>' : ''}
+      ${e.nuevo ? '<span class="sello-nuevo">Números nuevos</span>' : e.items.some(esProximo) ? '<span class="sello-nuevo sello-prox">Vienen números nuevos</span>' : ''}
       <div class="tapa">
         ${portada ? `<img src="${escapar(portada)}" alt="${escapar(e.serie.nombre)}" loading="lazy">` : '<div class="sin-foto">📚</div>'}
         <span class="sello-cant">📚 ${cant} número${cant === 1 ? '' : 's'}</span>
-        ${conStock ? '' : '<span class="sello-sin-stock">Se encarga</span>'}
+        ${e.proximo ? (e.nuevo ? '' : '<span class="sello-sin-stock sello-prox">Próximamente</span>') : conStock ? '' : '<span class="sello-sin-stock">Se encarga</span>'}
       </div>
       <div class="cuerpo">
         <div class="titulo">${escapar(e.serie.nombre)}</div>
@@ -3681,6 +3792,7 @@ function dibujarCatalogo() {
   let lista = entradasCatalogo($('buscadorCatalogo').value);
   const ver = filtroCliente.ver;
   if (ver === 'nuevos') lista = lista.filter(e => e.nuevo);
+  else if (ver === 'proximos') lista = lista.filter(e => e.proximo);
   else if (ver !== 'todo') lista = lista.filter(e => e.categoria === ver);
   lista = ordenarEntradas(lista);
 
@@ -3701,8 +3813,10 @@ function dibujarCatalogo() {
   let html = '';
   const novedades = lista.filter(e => e.nuevo);
   if (novedades.length) html += '<h2 class="seccion-tit">✨ Recién llegados</h2>' + grillaEntradas(novedades);
+  const proximos = lista.filter(e => e.proximo && !e.nuevo);
+  if (proximos.length) html += '<h2 class="seccion-tit">🔜 Próximamente <small>reservalo antes de que salga</small></h2>' + grillaEntradas(proximos);
 
-  const resto = lista.filter(e => !e.nuevo);
+  const resto = lista.filter(e => !e.nuevo && !e.proximo);
   Object.keys(CATEGORIAS).concat(['_resto']).forEach(cat => {
     const grupo = cat === '_resto'
       ? resto.filter(e => !CATEGORIAS[e.categoria])
@@ -3723,6 +3837,7 @@ function abrirSerie(id, agregarHistorial = true) {
   filtroCliente.serie = Number(id);
   const items = numerosDeSerie(id).sort(compararNumero);
   const conStock = items.filter(p => disponible(p) > 0).length;
+  const proxN = items.filter(esProximo).length;
   const portada = portadaDeSerie(serie);
 
   $('vistaSerie').innerHTML = `
@@ -3731,7 +3846,7 @@ function abrirSerie(id, agregarHistorial = true) {
       ${portada ? `<img src="${escapar(portada)}" alt="">` : '<div class="sin-foto">📚</div>'}
       <div>
         <h2>${escapar(serie.nombre)}</h2>
-        <p>${conStock} número${conStock === 1 ? '' : 's'} en el puesto${items.length > conStock ? ` · ${items.length - conStock} se encarga${items.length - conStock === 1 ? '' : 'n'}` : ''}</p>
+        <p>${conStock} número${conStock === 1 ? '' : 's'} en el puesto${proxN ? ` · ${proxN} próximamente` : ''}${items.length - conStock - proxN > 0 ? ` · ${items.length - conStock - proxN} se encarga${items.length - conStock - proxN === 1 ? '' : 'n'}` : ''}</p>
       </div>
     </div>
     <div class="grilla">${items.map(p => tarjetaCatalogo(p, true)).join('')}</div>
@@ -3775,7 +3890,10 @@ function verProducto(id) {
     <p class="precio-detalle">${plata(p.precio)}</p>
     ${p.descripcion ? `<p class="descripcion-detalle">${escapar(p.descripcion)}</p>` : ''}
     <div class="acciones">
-      ${disp
+      ${esProximo(p)
+        ? `<p class="info">🔜 Todavía no salió (${escapar(textoSalida(p).toLowerCase())}). Reservalo y te lo guardamos apenas llegue.</p>
+           <button class="btn-principal" onclick="abrirPedido(${Number(p.id)})">📌 Reservar antes que salga</button>`
+        : disp
         ? `<button class="btn-principal" onclick="abrirPedido(${Number(p.id)})">📌 Reservar</button>`
         : `<p class="info">No hay en el puesto ahora, pero te lo podemos encargar.</p>
            <button class="btn-principal btn-azul" onclick="abrirPedido(${Number(p.id)})">📦 Solicitar ejemplar</button>`}
@@ -3794,7 +3912,10 @@ function abrirPedido(id) {
   let nombre = '', tel = '';
   try { nombre = localStorage.getItem('cliente_nombre') || ''; tel = localStorage.getItem('cliente_tel') || ''; } catch (e) {}
   const max = solicitud ? 5 : Math.min(disp, 5);
-  const explicacion = solicitud
+  const explicacion = esProximo(p)
+    ? `<div class="aviso-solicitud">🔜 <b>Todavía no salió</b> (${escapar(textoSalida(p).toLowerCase())}). Reservalo ahora y te lo guardamos apenas llegue al puesto.
+        Como se pide a la editorial para vos, hay que pagar el <b>total</b> por adelantado. Te avisamos por WhatsApp cuando llega.</div>`
+    : solicitud
     ? `<div class="aviso-solicitud">📦 <b>Solicitar ejemplar</b> pide este número a la editorial <b>solo para vos</b>.
         Para encargarlo hay que pagar el <b>total</b> por adelantado (Mercado Pago o en el puesto).
         Te avisamos por WhatsApp cuando llega.</div>`
@@ -3815,7 +3936,7 @@ function abrirPedido(id) {
     <input type="tel" id="cliTel" value="${escapar(tel)}" placeholder="11 2345 6789" autocomplete="tel">
     ${solicitud ? '' : explicacion}
     <div class="acciones espacio-arriba">
-      <button class="btn-principal ${solicitud ? 'btn-azul' : ''}" onclick="reservarCliente(${Number(p.id)})">${solicitud ? '📦 Solicitar' : '📌 Reservar'} <span data-cant-de="cantHoja">1</span></button>
+      <button class="btn-principal ${solicitud && !esProximo(p) ? 'btn-azul' : ''}" onclick="reservarCliente(${Number(p.id)})">${esProximo(p) ? '📌 Reservar' : solicitud ? '📦 Solicitar' : '📌 Reservar'} <span data-cant-de="cantHoja">1</span></button>
       <button class="accion wa" onclick="pedirProducto(${Number(p.id)})">💬 Prefiero consultar por WhatsApp</button>
       <button class="accion cerrar" onclick="cerrarHoja()">Seguir mirando</button>
     </div>`);
@@ -3825,7 +3946,7 @@ let ultimaReservaCliente = null;
 
 async function reservarCliente(id) {
   const p = productoPorId(id);
-  const solicitud = disponible(p) < 1;
+  const solicitud = disponible(p) < 1 || esProximo(p);
   const cant = Number($('cantHoja').textContent);
   const nombre = $('cliNombre').value.trim();
   const tel = $('cliTel').value.replace(/\D/g, '');
@@ -3842,7 +3963,7 @@ async function reservarCliente(id) {
   if (!solicitud) p.reservado = reservadoDe(p) + cant;
   const total = cant * Number(p.precio);
   const aPagar = solicitud ? total : Math.ceil(total * estado.senaPct / 100);
-  ultimaReservaCliente = { rid: Number(rid), nombre, cant, titulo: p.titulo, total, aPagar, solicitud };
+  ultimaReservaCliente = { rid: Number(rid), nombre, cant, titulo: p.titulo, total, aPagar, solicitud, proximo: esProximo(p) };
   if (filtroCliente.serie) abrirSerie(filtroCliente.serie, false);
   else { dibujarFiltrosCliente(); dibujarCatalogo(); }
   pantallaPagoCliente();
@@ -3856,7 +3977,7 @@ function pantallaPagoCliente() {
   mostrarHoja(`
     <div class="exito">✅</div>
     <h3>¡Listo, ${escapar(r.nombre)}!</h3>
-    <p class="info">${r.solicitud ? 'Pediste' : 'Te reservamos'} ${r.cant} × ${escapar(r.titulo)} (${plata(r.total)}).</p>
+    <p class="info">${r.solicitud ? 'Pediste' : 'Te reservamos'} ${r.cant} × ${escapar(r.titulo)} (${plata(r.total)}).${r.proximo ? '<br>Te avisamos por WhatsApp cuando salga.' : ''}</p>
     ${r.aPagar > 0 ? `
       <div class="caja-pago">
         <p>Para ${r.solicitud ? 'encargarlo' : 'guardártelo'} falta pagar ${que}:</p>
@@ -3922,7 +4043,7 @@ function pagoEnLocal() {
 function avisarReserva(como) {
   const r = ultimaReservaCliente;
   if (!r) return;
-  const que = r.solicitud ? '📦 Solicité (pedido a editorial)' : '📌 Reservé';
+  const que = r.proximo ? '🔜 Reservé antes de que salga' : r.solicitud ? '📦 Solicité (pedido a editorial)' : '📌 Reservé';
   const pago = como === 'transferencia' ? `\n💳 Te transferí ${plata(r.aPagar)}, te paso el comprobante.`
     : como === 'local' ? `\n🏪 Pago ${plata(r.aPagar)} en el puesto.` : '';
   abrirWhatsApp(estado.whatsapp, `Hola! 👋 Soy ${r.nombre}. ${que} desde el catálogo:\n${r.cant} × *${r.titulo}* — ${plata(r.total)}${pago}\n¿Me confirman?`);

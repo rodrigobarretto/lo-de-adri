@@ -220,7 +220,7 @@
       background: var(--campo); border: 2px solid var(--borde); border-radius: 16px;
       padding: 14px 10px; font-weight: 700; font-size: 1rem;
     }
-    input[type=text], input[type=search], input[type=email], input[type=password], .campo-precio input {
+    input[type=text], input[type=tel], input[type=date], input[type=search], input[type=email], input[type=password], .campo-precio input {
       width: 100%;
       padding: 16px;
       font-size: 1.2rem;
@@ -264,6 +264,9 @@
     .pestanas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
     .pestanas.pestanas-3 { grid-template-columns: repeat(3, 1fr); }
     .pestanas.pestanas-2x2 { grid-template-columns: repeat(2, 1fr); }
+    .pestanas.pestanas-5 { grid-template-columns: repeat(6, 1fr); }
+    .pestanas.pestanas-5 button { grid-column: span 2; }
+    .pestanas.pestanas-5 button:nth-child(n+4) { grid-column: span 3; }
     .pestanas button { line-height: 1.15; padding-left: 2px !important; padding-right: 2px !important; font-size: .85rem !important;
       background: var(--campo); border: 2px solid var(--borde); border-radius: 14px;
       padding: 12px 4px; font-weight: 800; font-size: .95rem;
@@ -404,6 +407,18 @@
       font-size: .75rem; font-weight: 900; padding: 4px 9px; border-radius: 999px; z-index: 1;
     }
     .seccion-tit { font-size: 1.2rem; font-weight: 900; margin: 20px 4px 10px; }
+    .seccion-tit small { display: block; font-size: .85rem; color: var(--suave); font-weight: 700; }
+    .sello-nuevo.sello-prox, .sello-sin-stock.sello-prox { background: #6d28d9; color: #fff; }
+    .sale-cat { color: #6d28d9; font-weight: 900; font-size: .8rem; }
+    .producto .pedir.anticipado { background: #6d28d9; }
+    .etiqueta.prox { background: #ede9fe; color: #6d28d9; }
+    .caja-proximo { display: grid; gap: 8px; background: #ede9fe; color: #3b0764; border: 2px solid #c4b5fd; border-radius: 16px; padding: 12px; margin: 8px 0 12px; }
+    .resumen-pedir .fila-pedir { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--borde); }
+    .resumen-pedir .fila-pedir small { display: block; color: var(--suave); font-size: .8rem; }
+    .resumen-pedir .fila-pedir b { font-size: 1.3rem; }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .etiqueta.prox, :root:not([data-theme="light"]) .caja-proximo { background: #2e1065; color: #ddd6fe; border-color: #5b21b6; } :root:not([data-theme="light"]) .sale-cat { color: #c4b5fd; } }
+    :root[data-theme="dark"] .etiqueta.prox, :root[data-theme="dark"] .caja-proximo { background: #2e1065; color: #ddd6fe; border-color: #5b21b6; }
+    :root[data-theme="dark"] .sale-cat { color: #c4b5fd; }
     .cat-pie { text-align: center; color: var(--suave); font-size: .85rem; margin-top: 26px; }
 
     .link-ajustes {
@@ -1044,10 +1059,16 @@
       </div>
 
       <div class="tarjeta">
-        <p class="paso"><span class="num" id="numPasoTipo">6</span>¿Llegó hoy o es de antes?</p>
-        <div class="elegir" id="elegirTipo">
-          <button data-valor="nuevo" onclick="elegirTipo(this)" class="activo">✨ Llegó nuevo<span class="chico">Novedad por 7 días</span></button>
-          <button data-valor="stock" onclick="elegirTipo(this)">📦 Es de antes<span class="chico">Va al archivo</span></button>
+        <p class="paso"><span class="num" id="numPasoTipo">6</span>¿Llegó hoy, es de antes o todavía no salió?</p>
+        <div class="elegir elegir-3" id="elegirTipo">
+          <button data-valor="nuevo" onclick="elegirTipo(this)" class="activo">✨ Llegó nuevo<span class="chico">Novedad 7 días</span></button>
+          <button data-valor="stock" onclick="elegirTipo(this)">📦 Es de antes<span class="chico">Al archivo</span></button>
+          <button data-valor="proximo" onclick="elegirTipo(this)">🔜 Próxima&shy;mente<span class="chico">Se reserva antes</span></button>
+        </div>
+        <div id="bloqueSalida" class="oculto">
+          <label class="mini" for="nuevaSalida">¿Cuándo sale? <span class="opcional">(si sabés)</span></label>
+          <input type="date" id="nuevaSalida">
+          <p class="ayuda-campo">Queda en "Próximamente" en el catálogo y los clientes lo pueden reservar. Cuando salga, en su ficha tocás 🚀 Ya salió.</p>
         </div>
       </div>
 
@@ -1061,11 +1082,12 @@
 
     <!-- ===================== STOCK ===================== -->
     <section id="pantalla-stock" class="oculto">
-      <div class="pestanas">
+      <div class="pestanas pestanas-5">
         <button data-filtro="todo" class="activo" onclick="elegirFiltro(this)">Todo</button>
         <button data-filtro="novedad" onclick="elegirFiltro(this)">✨ Nuevos</button>
         <button data-filtro="archivo" onclick="elegirFiltro(this)">📦 Archivo</button>
         <button data-filtro="agotado" onclick="elegirFiltro(this)">🚫 Sin stock</button>
+        <button data-filtro="proximo" onclick="elegirFiltro(this)">🔜 Próximos</button>
       </div>
       <input type="search" id="buscador" class="buscador" placeholder="🔎 Buscar por título o palabra clave" oninput="dibujarStock()">
       <div class="fila-contador">
