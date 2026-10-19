@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '16';                // subir junto con VERSION de sw.js
+const VERSION_APP = '17';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -667,10 +667,11 @@ function buscarTitulos(texto, max = 6) {
       if (t.clave.startsWith(q)) p = 0;
       else if (t.clave.split(' ').some(w => w.startsWith(q))) p = 1;
       else if (palabras.every(w => t.clave.includes(w))) p = 2;
-      if (p >= 0 && t.origen === 'serie') p -= 0.5;   // lo que ya tiene cargado, primero
+      if (p < 0) return { t, p: null };
+      if (t.origen === 'serie') p -= 0.5;   // lo que ya tiene cargado, primero
       return { t, p };
     })
-    .filter(x => x.p >= 0)
+    .filter(x => x.p !== null)
     .sort((a, b) => a.p - b.p || a.t.nombre.length - b.t.nombre.length)
     .slice(0, max)
     .map(x => x.t);
@@ -718,6 +719,17 @@ function elegirSugerencia(inputId, i) {
   const t = sugerenciasActuales[i];
   if (!t) return;
   $('sug-' + inputId).innerHTML = '';
+  if (inputId === 'edTitulo') {
+    // En "Editar": si es una colección ya cargada, la elige; si no, pone el título
+    const existente = t.coleccion && estado.series.find(x => normalizar(x.nombre) === t.clave);
+    if (existente) $('edSerie').value = String(existente.id);
+    else {
+      $('edTitulo').value = t.nombre;
+      if (CATEGORIAS[t.categoria]) $('edCategoria').value = t.categoria;
+    }
+    actualizarEdicion();
+    return;
+  }
   estado.editorial = t.editorial || '';
   marcarCategoria(t.categoria);
 
@@ -1316,7 +1328,8 @@ function pantallaEditar(pid) {
 
       <div id="edBloqueTitulo" class="${serie ? 'oculto' : ''}">
         <label class="mini" for="edTitulo">Título</label>
-        <input type="text" id="edTitulo" value="${escapar(serie ? '' : tituloBase(p))}" autocomplete="off" autocapitalize="sentences" oninput="actualizarEdicion()">
+        <input type="text" id="edTitulo" value="${escapar(serie ? '' : tituloBase(p))}" autocomplete="off" autocapitalize="sentences" oninput="sugerirTitulo(this); actualizarEdicion()" onblur="ocultarSugerencias(this)" aria-controls="sug-edTitulo">
+        <div class="sugerencias" id="sug-edTitulo" role="listbox"></div>
       </div>
 
       <div id="edBloqueNumero">
@@ -1399,6 +1412,8 @@ async function guardarEdicion(pid) {
     precio
   };
   await actualizarProducto(pid, cambios, '✏️ Publicación actualizada');
+  // Si el título es nuevo, queda en la lista de títulos
+  guardarTituloSiEsNuevo(d.base, cambios.categoria, !!sid);
 }
 
 function pantallaNombreSerie(sid, pid) {
@@ -1429,6 +1444,7 @@ async function guardarNombreSerie(sid) {
     }
     const serie = serieDe(sid);
     if (serie) serie.nombre = nombre;
+    guardarTituloSiEsNuevo(nombre, (serie && serie.categoria) || 'Colecciones', true);
     ocultarCargando();
     cerrarHoja();
     avisar('📚 Nombre cambiado');
