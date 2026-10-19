@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '14';                // subir junto con VERSION de sw.js
+const VERSION_APP = '15';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -47,6 +47,7 @@ const estado = {
   tipo: 'nuevo',
   fotoArchivo: null,
   fotoPreviewUrl: null,
+  fotosExtra: [],          // [{ blob, url }] fotos además de la portada (hasta 2)
   modo: 'suelto',          // 'suelto' o 'serie'
   serieElegida: null,      // id de la colección, 'nueva' o null
   series: [],
@@ -372,11 +373,37 @@ function elegirSerie(id) {
 
 async function prepararCarga() {
   traerTitulosExtra();
+  dibujarFotosExtra();
   try {
     await traerProductos();
     if (estado.serieElegida && estado.serieElegida !== 'nueva' && !serieDe(estado.serieElegida)) estado.serieElegida = null;
   } catch (e) { /* sin conexión: se verá al guardar */ }
   actualizarFormularioModo();
+}
+
+function dibujarFotosExtra() {
+  const caja = $('fotosExtra');
+  if (!caja) return;
+  const extras = estado.fotosExtra.map((f, i) => `
+    <div class="foto-extra"><img src="${f.url}" alt="Foto extra ${i + 1}">
+      <button class="quitar" onclick="quitarFotoExtra(${i})" aria-label="Quitar foto">✖</button></div>`).join('');
+  const agregar = estado.fotosExtra.length < MAX_FOTOS - 1
+    ? `<button class="foto-extra agregar" onclick="document.getElementById('inputExtra').click()"><span class="grande">➕</span>Agregar foto</button>` : '';
+  caja.innerHTML = extras + agregar;
+}
+
+function agregarFotoExtra(input) {
+  const archivo = input.files && input.files[0];
+  input.value = '';
+  if (!archivo || estado.fotosExtra.length >= MAX_FOTOS - 1) return;
+  estado.fotosExtra.push({ blob: archivo, url: URL.createObjectURL(archivo) });
+  dibujarFotosExtra();
+}
+
+function quitarFotoExtra(i) {
+  const f = estado.fotosExtra.splice(i, 1)[0];
+  if (f) URL.revokeObjectURL(f.url);
+  dibujarFotosExtra();
 }
 
 function elegirFoto(input) {
@@ -429,6 +456,29 @@ async function subirFoto(archivo) {
   return db.storage.from(BUCKET).getPublicUrl(nombre).data.publicUrl;
 }
 
+const MAX_FOTOS = 3;   // portada + 2 extra
+
+function fotosDe(p) {
+  return [p.imagen_url].concat(Array.isArray(p.fotos_extra) ? p.fotos_extra : []).filter(Boolean);
+}
+
+// Varias fotos deslizables (detalle del catálogo y hoja del puesto)
+function galeria(p, alt) {
+  const fotos = fotosDe(p);
+  if (!fotos.length) return '';
+  const gid = 'gal' + Number(p.id);
+  return `<div class="galeria" id="${gid}" onscroll="moverPuntos('${gid}')">${fotos.map((u, i) =>
+      `<img src="${escapar(u)}" alt="${escapar(alt || p.titulo)}${fotos.length > 1 ? ' — foto ' + (i + 1) : ''}">`).join('')}</div>` +
+    (fotos.length > 1 ? `<div class="puntos" id="${gid}p">${fotos.map((_, i) => `<span class="${i ? '' : 'activo'}"></span>`).join('')}</div>` : '');
+}
+
+function moverPuntos(gid) {
+  const g = $(gid), pts = $(gid + 'p');
+  if (!g || !pts) return;
+  const i = Math.round(g.scrollLeft / Math.max(1, g.clientWidth));
+  Array.from(pts.children).forEach((s, j) => s.classList.toggle('activo', j === i));
+}
+
 function rutaDeFoto(url) {
   if (!url) return null;
   const marca = '/' + BUCKET + '/';
@@ -451,6 +501,9 @@ function limpiarFormulario() {
   if (estado.fotoPreviewUrl) URL.revokeObjectURL(estado.fotoPreviewUrl);
   estado.fotoPreviewUrl = null;
   $('fotoCaja').innerHTML = '<span class="grande">📷</span><span>Tocá acá para sacar la foto</span>';
+  estado.fotosExtra.forEach(f => URL.revokeObjectURL(f.url));
+  estado.fotosExtra = [];
+  dibujarFotosExtra();
 }
 
 // Busca una colección por nombre (sin importar mayúsculas ni tildes) o la crea
@@ -486,14 +539,21 @@ async function guardarProducto() {
 
   const boton = $('btnGuardar');
   boton.disabled = true;
-  mostrarCargando(estado.fotoArchivo ? 'Subiendo la foto…' : 'Guardando…');
+  mostrarCargando(estado.fotoArchivo || estado.fotosExtra.length ? 'Subiendo las fotos…' : 'Guardando…');
 
   try {
     let imagenUrl = '';
     if (estado.fotoArchivo) {
       imagenUrl = await subirFoto(estado.fotoArchivo);
-      $('cargandoTexto').textContent = 'Guardando…';
     }
+    const extrasUrls = [];
+    for (let i = 0; i < estado.fotosExtra.length; i++) {
+      $('cargandoTexto').textContent = `Subiendo foto ${i + 2}…`;
+      extrasUrls.push(await subirFoto(estado.fotosExtra[i].blob));
+    }
+    // Si no hay portada pero sí fotos extra, la primera pasa a ser la portada
+    if (!imagenUrl && extrasUrls.length) imagenUrl = extrasUrls.shift();
+    $('cargandoTexto').textContent = 'Guardando…';
 
     const fila = {
       precio,
@@ -503,6 +563,7 @@ async function guardarProducto() {
       visitas: 0,
       cantidad: Math.max(1, Number($('nuevaCantidad').textContent) || 1),
       descripcion: $('nuevaDescripcion').value.trim().slice(0, 300) || null,
+      fotos_extra: extrasUrls,
       editorial: estado.editorial || null
     };
 
@@ -686,7 +747,7 @@ async function guardarTituloSiEsNuevo(nombre, categoria, coleccion) {
 //  BUSCAR FOTO Y DESCRIPCIÓN EN INTERNET
 // =====================================================================
 
-const busqueda = { resultados: null, foto: null, desc: null, destino: null };
+const busqueda = { resultados: null, fotos: [], desc: null, destino: null };
 
 async function invocarBusqueda(cuerpo) {
   const { data, error } = await db.functions.invoke('buscar-foto', { body: cuerpo });
@@ -725,7 +786,7 @@ function buscarFotoParaProducto(pid) {
 }
 
 async function abrirBusqueda(q, destino) {
-  busqueda.resultados = null; busqueda.foto = null; busqueda.desc = null; busqueda.destino = destino;
+  busqueda.resultados = null; busqueda.fotos = []; busqueda.desc = null; busqueda.destino = destino;
   mostrarHoja(`
     <h3>🔎 Buscando…</h3>
     <p class="info">${escapar(q)}</p>
@@ -746,7 +807,7 @@ function dibujarBusqueda(q) {
   const r = busqueda.resultados || { imagenes: [], descripciones: [] };
   if (!busqueda.desc && r.descripciones.length) busqueda.desc = 0;
   const fotos = r.imagenes.map((im, i) => `
-      <button class="${busqueda.foto === i ? 'activo' : ''}" onclick="elegirFotoBuscada(${i})" aria-label="Foto ${i + 1} de ${escapar(im.fuente)}">
+      <button class="${busqueda.fotos.includes(i) ? 'activo' : ''}" ${busqueda.fotos.includes(i) ? `data-orden="${busqueda.fotos.indexOf(i) + 1}"` : ''} onclick="elegirFotoBuscada(${i})" aria-label="Foto ${i + 1} de ${escapar(im.fuente)}">
         <img src="${escapar(im.miniatura)}" alt="" loading="lazy" referrerpolicy="no-referrer">
         <span class="fuente">${escapar(im.fuente)}</span>
       </button>`).join('');
@@ -755,19 +816,23 @@ function dibujarBusqueda(q) {
         ${escapar(d.texto)}<small>${escapar(d.fuente)}</small>
       </button>`).join('');
   mostrarHoja(`
-    <h3>Elegí la tapa</h3>
+    <h3>Elegí las fotos</h3>
     <p class="info">${escapar(q)}</p>
+    <p class="ayuda-campo">Tocá hasta ${MAX_FOTOS}. La 1 es la portada; las otras se ven al deslizar.</p>
     ${fotos ? `<div class="resultados-fotos">${fotos}</div>` : '<p class="vacio">No encontré fotos. Probá sacándole una foto.</p>'}
     ${descs ? `<p class="mini">Descripción (tocá la que mejor la describe)</p><div class="opciones-desc">${descs}
       <button class="${busqueda.desc === -1 ? 'activo' : ''}" onclick="elegirDescBuscada(-1)">Sin descripción</button></div>` : ''}
     <div class="acciones">
-      <button class="btn-principal" onclick="usarBusqueda()" ${busqueda.foto === null && (busqueda.desc === null || busqueda.desc < 0) ? 'disabled' : ''}>✅ Usar esto</button>
+      <button class="btn-principal" onclick="usarBusqueda()" ${!busqueda.fotos.length && (busqueda.desc === null || busqueda.desc < 0) ? 'disabled' : ''}>✅ Usar esto</button>
       <button class="accion cerrar" onclick="cerrarHoja()">Cancelar</button>
     </div>`);
 }
 
 function elegirFotoBuscada(i) {
-  busqueda.foto = busqueda.foto === i ? null : i;
+  const k = busqueda.fotos.indexOf(i);
+  if (k >= 0) busqueda.fotos.splice(k, 1);
+  else if (busqueda.fotos.length < MAX_FOTOS) busqueda.fotos.push(i);
+  else { avisar(`Podés elegir hasta ${MAX_FOTOS} fotos`, 'info'); return; }
   const scroll = $('hoja').scrollTop;
   dibujarBusqueda(document.querySelector('.hoja .info') ? document.querySelector('.hoja .info').textContent : '');
   $('hoja').scrollTop = scroll;
@@ -780,8 +845,8 @@ function elegirDescBuscada(i) {
   $('hoja').scrollTop = scroll;
 }
 
-async function traerFotoElegida() {
-  const im = busqueda.resultados.imagenes[busqueda.foto];
+async function traerFotoElegida(indice) {
+  const im = busqueda.resultados.imagenes[indice];
   let blob;
   try {
     blob = await invocarBusqueda({ descargar: im.url });
@@ -796,36 +861,53 @@ async function traerFotoElegida() {
 async function usarBusqueda() {
   const r = busqueda.resultados;
   const texto = busqueda.desc !== null && busqueda.desc >= 0 ? r.descripciones[busqueda.desc].texto : '';
-  mostrarCargando(busqueda.foto !== null ? 'Trayendo la foto…' : 'Guardando…');
+  mostrarCargando(busqueda.fotos.length ? 'Trayendo las fotos…' : 'Guardando…');
   try {
-    let blob = null;
-    if (busqueda.foto !== null) blob = await comprimirFoto(await traerFotoElegida());
+    // Trae las elegidas en orden; si alguna no se deja bajar, sigue con las otras
+    const blobs = [];
+    for (const i of busqueda.fotos) {
+      try { blobs.push(await comprimirFoto(await traerFotoElegida(i))); } catch (e) { console.warn('Foto no disponible', e); }
+    }
+    if (busqueda.fotos.length && !blobs.length) throw new Error('NO_SE_PUDO_DESCARGAR');
+    const avisoParcial = blobs.length < busqueda.fotos.length ? ` (${busqueda.fotos.length - blobs.length} no se pudo traer)` : '';
 
     if (busqueda.destino.tipo === 'carga') {
-      if (blob) {
-        estado.fotoArchivo = blob;
+      if (blobs.length) {
+        estado.fotoArchivo = blobs[0];
         if (estado.fotoPreviewUrl) URL.revokeObjectURL(estado.fotoPreviewUrl);
-        estado.fotoPreviewUrl = URL.createObjectURL(blob);
+        estado.fotoPreviewUrl = URL.createObjectURL(blobs[0]);
         $('fotoCaja').innerHTML = '<img src="' + estado.fotoPreviewUrl + '" alt="Foto elegida">';
+        if (blobs.length > 1) {
+          estado.fotosExtra.forEach(f => URL.revokeObjectURL(f.url));
+          estado.fotosExtra = blobs.slice(1, MAX_FOTOS).map(bl => ({ blob: bl, url: URL.createObjectURL(bl) }));
+          dibujarFotosExtra();
+        }
       }
       if (texto) $('nuevaDescripcion').value = texto;
       ocultarCargando();
       cerrarHoja();
-      avisar('✅ Listo. Revisá y tocá Guardar');
+      avisar('✅ Listo. Revisá y tocá Guardar' + avisoParcial);
     } else {
       const pid = busqueda.destino.pid;
-      const cambios = {};
-      if (blob) cambios.imagen_url = await subirFoto(blob);
-      if (texto) cambios.descripcion = texto;
       const viejo = productoPorId(pid);
+      const cambios = {};
+      if (blobs.length) {
+        const urls = [];
+        for (const bl of blobs) urls.push(await subirFoto(bl));
+        cambios.imagen_url = urls[0];
+        cambios.fotos_extra = urls.slice(1);
+      }
+      if (texto) cambios.descripcion = texto;
       const { error } = await db.from('productos').update(cambios).eq('id', pid);
       if (error) throw error;
-      // Borra la foto anterior para no llenar el espacio
-      const rutaVieja = blob && viejo ? rutaDeFoto(viejo.imagen_url) : null;
-      if (rutaVieja) db.storage.from(BUCKET).remove([rutaVieja]).catch(() => {});
+      // Las fotos nuevas reemplazan a las anteriores: se borran para no llenar el espacio
+      if (blobs.length && viejo) {
+        const rutas = fotosDe(viejo).map(rutaDeFoto).filter(Boolean);
+        if (rutas.length) db.storage.from(BUCKET).remove(rutas).catch(() => {});
+      }
       ocultarCargando();
       cerrarHoja();
-      avisar('✅ Ficha actualizada');
+      avisar('✅ Ficha actualizada' + avisoParcial);
       refrescar();
     }
   } catch (err) {
@@ -833,6 +915,81 @@ async function usarBusqueda() {
     ocultarCargando();
     avisar('❌ ' + mensajeError(err), 'mal', 5000);
   }
+}
+
+// ---------- Fotos de una publicación ya cargada ----------
+
+let fotosPid = null;
+
+function pantallaFotos(pid) {
+  fotosPid = Number(pid);
+  const p = productoPorId(pid);
+  const fotos = fotosDe(p);
+  $('hojaContenido').innerHTML = `
+    <h3>🖼️ Fotos</h3>
+    <p class="info">${escapar(p.titulo)} · ${fotos.length} de ${MAX_FOTOS}. La primera es la portada.</p>
+    <div class="lista-fotos">
+      ${fotos.map((u, i) => `
+        <div class="fila-foto">
+          <img src="${escapar(u)}" alt="Foto ${i + 1}">
+          <div class="botones">
+            ${i === 0 ? '<span class="etiqueta nuevo" style="justify-self:start">⭐ Portada</span>' : `<button onclick="hacerPortada(${i})">⭐ Hacer portada</button>`}
+            <button class="no" onclick="quitarFotoProducto(${i})">🗑️ Quitar</button>
+          </div>
+        </div>`).join('') || '<p class="vacio">Todavía no tiene fotos.</p>'}
+    </div>
+    <div class="acciones">
+      ${fotos.length < MAX_FOTOS ? `<button class="btn-principal btn-azul" onclick="document.getElementById('inputFotoProducto').click()">📷 Agregar foto</button>` : ''}
+      <button class="accion" onclick="buscarFotoParaProducto(${Number(pid)})">🔎 Buscar en internet (reemplaza las fotos)</button>
+      <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Listo</button>
+    </div>`;
+  $('hoja').scrollTop = 0;
+}
+
+async function guardarFotos(pid, lista, mensaje, borrar) {
+  mostrarCargando('Guardando…');
+  const { error } = await db.from('productos').update({ imagen_url: lista[0] || '', fotos_extra: lista.slice(1) }).eq('id', pid);
+  ocultarCargando();
+  if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return false; }
+  const p = productoPorId(pid);
+  if (p) { p.imagen_url = lista[0] || ''; p.fotos_extra = lista.slice(1); }
+  if (borrar) { const r = rutaDeFoto(borrar); if (r) db.storage.from(BUCKET).remove([r]).catch(() => {}); }
+  avisar(mensaje);
+  pantallaFotos(pid);
+  return true;
+}
+
+async function agregarFotoProducto(input) {
+  const archivo = input.files && input.files[0];
+  input.value = '';
+  const p = productoPorId(fotosPid);
+  if (!archivo || !p) return;
+  const fotos = fotosDe(p);
+  if (fotos.length >= MAX_FOTOS) return;
+  mostrarCargando('Subiendo la foto…');
+  try {
+    const url = await subirFoto(archivo);
+    ocultarCargando();
+    await guardarFotos(p.id, fotos.concat(url), '📷 Foto agregada');
+  } catch (err) {
+    console.error(err);
+    ocultarCargando();
+    avisar('❌ ' + mensajeError(err), 'mal', 5000);
+  }
+}
+
+async function hacerPortada(i) {
+  const p = productoPorId(fotosPid);
+  const fotos = fotosDe(p);
+  const [elegida] = fotos.splice(i, 1);
+  await guardarFotos(p.id, [elegida].concat(fotos), '⭐ Portada cambiada');
+}
+
+async function quitarFotoProducto(i) {
+  const p = productoPorId(fotosPid);
+  const fotos = fotosDe(p);
+  const [quitada] = fotos.splice(i, 1);
+  await guardarFotos(p.id, fotos, '🗑️ Foto quitada', quitada);
 }
 
 function pantallaDescripcion(pid) {
@@ -1050,7 +1207,7 @@ function dibujarHoja(id) {
   const pid = Number(p.id);
 
   $('hojaContenido').innerHTML = `
-    ${p.imagen_url ? `<img src="${escapar(p.imagen_url)}" alt="">` : ''}
+    ${galeria(p)}
     <h3>${escapar(p.titulo)}</h3>
     ${p.descripcion ? `<p class="descripcion-detalle">${escapar(p.descripcion)}</p>` : ''}
     <p class="info">${plata(p.precio)} · ${escapar(CATEGORIAS[p.categoria] || p.categoria)}
@@ -1072,7 +1229,8 @@ function dibujarHoja(id) {
       <button class="accion" onclick="pantallaEditar(${pid})">✏️ Editar publicación (título, número, modelo…)</button>
       ${p.serie_id && serieDe(p.serie_id) ? `<button class="accion" onclick="pantallaNombreSerie(${Number(p.serie_id)}, ${pid})">📚 Cambiar el nombre de la colección</button>` : ''}
       <button class="accion" onclick="pantallaPrecio(${pid})">💲 Cambiar el precio</button>
-      <button class="accion" onclick="buscarFotoParaProducto(${pid})">🔎 Buscar foto y descripción en internet</button>
+      <button class="accion" onclick="pantallaFotos(${pid})">🖼️ Fotos (${fotosDe(p).length} de ${MAX_FOTOS})</button>
+      <button class="accion" onclick="buscarFotoParaProducto(${pid})">🔎 Buscar fotos y descripción en internet</button>
       <button class="accion" onclick="pantallaDescripcion(${pid})">📝 ${p.descripcion ? 'Cambiar la descripción' : 'Agregar descripción'}</button>
       ${nuevo
         ? `<button class="accion" onclick="cambiarTipo(${pid}, 'stock')">📦 Pasar al archivo</button>`
@@ -1330,7 +1488,7 @@ async function borrarProductos(ids) {
     avisar('❌ ' + mensajeError(error), 'mal', 5000);
     return false;
   }
-  const urls = productos.map(p => p.imagen_url).filter(Boolean);
+  const urls = productos.flatMap(fotosDe);
   const rutas = urls.map(rutaDeFoto).filter(Boolean);
   if (rutas.length) await db.storage.from(BUCKET).remove(rutas).catch(() => {});
   for (const serie of estado.series.filter(x => x.portada_url && urls.includes(x.portada_url))) {
@@ -2950,6 +3108,7 @@ function tarjetaCatalogo(p, enSerie) {
   return `
     <div class="producto">
       ${esNovedad(p) ? '<span class="sello-nuevo">Nuevo</span>' : ''}
+      ${fotosDe(p).length > 1 ? `<span class="sello-fotos">📷 ${fotosDe(p).length}</span>` : ''}
       <button class="ver-detalle" onclick="verProducto(${Number(p.id)})" aria-label="Ver ${escapar(p.titulo)}">
         ${p.imagen_url
           ? `<img src="${escapar(p.imagen_url)}" alt="${escapar(p.titulo)}" loading="lazy">`
@@ -3085,7 +3244,7 @@ function verProducto(id) {
   sumarInteres(p, 'ver', PUNTOS_VER);
   const disp = disponible(p);
   mostrarHoja(`
-    ${p.imagen_url ? `<img src="${escapar(p.imagen_url)}" alt="${escapar(p.titulo)}" class="foto-detalle">` : ''}
+    ${galeria(p)}
     ${esNovedad(p) ? '<span class="etiqueta nuevo">✨ Recién llegado</span>' : ''}
     <h3>${escapar(p.titulo)}</h3>
     <p class="precio-detalle">${plata(p.precio)}</p>

@@ -669,6 +669,31 @@
     .editar-campos select { width: 100%; padding: 14px; font-size: 1.05rem; border: 2px solid var(--borde); border-radius: 16px; background: var(--campo); color: var(--texto); }
     .titulo-final { margin: 6px 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--gris); font-weight: 800; }
 
+    /* VARIAS FOTOS */
+    .fotos-extra { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .foto-extra { position: relative; aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden; background: var(--gris); border: 2px solid var(--borde); }
+    .foto-extra img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .foto-extra .quitar { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,.65); color: #fff; font-weight: 900; }
+    .foto-extra.agregar { border-style: dashed; border-color: var(--azul); color: var(--azul); font-weight: 800; font-size: .9rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 6px; }
+    .foto-extra.agregar .grande { font-size: 1.6rem; }
+    .foto-extra .etq { position: absolute; left: 4px; bottom: 4px; background: rgba(0,0,0,.65); color: #fff; font-size: .7rem; font-weight: 800; padding: 2px 6px; border-radius: 999px; }
+    .galeria { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; margin-bottom: 8px; border-radius: 14px; scrollbar-width: none; }
+    .galeria::-webkit-scrollbar { display: none; }
+    .galeria img { flex: 0 0 100%; width: 100%; max-height: 52vh; object-fit: contain; scroll-snap-align: center; background: var(--gris); border-radius: 14px; }
+    .puntos { display: flex; justify-content: center; gap: 6px; margin: -2px 0 10px; }
+    .puntos span { width: 8px; height: 8px; border-radius: 50%; background: var(--borde); }
+    .puntos span.activo { background: var(--azul); }
+    .producto .sello-fotos { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: .75rem; font-weight: 800; padding: 3px 8px; border-radius: 999px; z-index: 1; }
+    .resultados-fotos button[data-orden]::after { content: attr(data-orden); }
+    .lista-fotos { display: grid; gap: 10px; margin-bottom: 12px; }
+    .hoja .galeria img { margin: 0; max-height: 52vh; }
+    .hoja .fila-foto img { width: 72px; height: 96px; margin: 0; object-fit: cover; }
+    .fila-foto { display: flex; gap: 12px; align-items: center; background: var(--tarjeta); border: 2px solid var(--borde); border-radius: 16px; padding: 8px; }
+    .fila-foto img { width: 72px; height: 96px; object-fit: cover; border-radius: 10px; flex-shrink: 0; }
+    .fila-foto .botones { display: grid; gap: 6px; flex: 1; }
+    .fila-foto .botones button { border-radius: 12px; padding: 10px; font-weight: 800; background: var(--gris); border: 2px solid var(--borde); }
+    .fila-foto .botones .no { background: var(--rojo-claro); color: var(--rojo); border-color: var(--rojo-borde); }
+
     /* INGRESO */
     .login { max-width: 420px; margin: 30px auto; }
     .login p { color: var(--suave); }
@@ -895,6 +920,9 @@
         </div>
         <input type="file" id="inputCamara" accept="image/*" capture="environment" class="oculto" onchange="elegirFoto(this)">
         <input type="file" id="inputGaleria" accept="image/*" class="oculto" onchange="elegirFoto(this)">
+        <p class="mini">Más fotos <span class="opcional">(hasta 2: lo que trae, la promo, el regalo…)</span></p>
+        <div class="fotos-extra" id="fotosExtra"></div>
+        <input type="file" id="inputExtra" accept="image/*" class="oculto" onchange="agregarFotoExtra(this)">
       </div>
 
       <div class="tarjeta">
@@ -1072,6 +1100,7 @@
     </div>
   </div>
 
+  <input type="file" id="inputFotoProducto" accept="image/*" class="oculto" onchange="agregarFotoProducto(this)">
   <div id="hoja" class="fondo-oscuro oculto" onclick="if (event.target === this) cerrarHoja()">
     <div class="hoja" id="hojaContenido"></div>
   </div>

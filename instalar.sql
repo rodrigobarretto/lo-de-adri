@@ -382,3 +382,6 @@ alter table public.ajustes add column if not exists redes jsonb not null default
 
 -- ---------- Agregado: modelo o detalle ----------
 alter table public.productos add column if not exists detalle text;
+
+-- ---------- Agregado: fotos extra ----------
+alter table public.productos add column if not exists fotos_extra text[] not null default '{}';
