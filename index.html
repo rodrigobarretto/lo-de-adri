@@ -263,6 +263,7 @@
     /* LISTA DE STOCK */
     .pestanas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
     .pestanas.pestanas-3 { grid-template-columns: repeat(3, 1fr); }
+    .pestanas.pestanas-2x2 { grid-template-columns: repeat(2, 1fr); }
     .pestanas button { line-height: 1.15; padding-left: 2px !important; padding-right: 2px !important; font-size: .85rem !important;
       background: var(--campo); border: 2px solid var(--borde); border-radius: 14px;
       padding: 12px 4px; font-weight: 800; font-size: .95rem;
@@ -359,6 +360,24 @@
       background: var(--wa); color: #fff; font-weight: 800; border-radius: 12px;
       padding: 10px 6px; font-size: .95rem; margin-top: 4px;
     }
+    .producto .pedir.solicitar { background: var(--azul); }
+    .sin-stock-cat { color: var(--suave); font-weight: 800; font-size: .8rem; }
+    .sello-sin-stock {
+      position: absolute; top: 8px; right: 8px; z-index: 1; background: #334155; color: #fff;
+      font-weight: 900; font-size: .75rem; padding: 4px 8px; border-radius: 999px;
+    }
+    .aviso-solicitud {
+      background: var(--azul-claro); color: var(--texto); border: 2px solid var(--azul); border-radius: 14px;
+      padding: 12px; margin: 10px 0; font-size: .95rem; line-height: 1.4;
+    }
+    .caja-pago { background: var(--gris); border: 2px solid var(--borde); border-radius: 16px; padding: 14px; text-align: center; margin: 10px 0 14px; display: grid; gap: 6px; }
+    .caja-pago p { margin: 0; }
+    .caja-pago .monto { font-size: 2rem; font-weight: 900; color: var(--verde); }
+    .caja-pago .monto.chico { font-size: 1.4rem; color: var(--texto); word-break: break-all; }
+    .btn-mp { background: #009ee3; box-shadow: 0 4px 10px rgba(0,158,227,.3); }
+    .chips-montos { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+    .chips-montos button { border-radius: 999px; padding: 8px 12px; font-weight: 800; background: var(--gris); border: 2px solid var(--borde); color: var(--texto); }
+    .etiqueta.sol { background: var(--azul-claro); color: var(--azul); }
     .chips {
       display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; margin: 0 -2px 4px;
       scrollbar-width: none;
@@ -580,7 +599,7 @@
     .chip-pago.si { background: var(--verde-claro); color: var(--verde); border-color: var(--verde-borde); }
     .chip-pago.no { background: var(--ambar-claro); color: var(--ambar); border-color: var(--ambar-borde); }
     .reserva-nota { background: var(--gris); border-radius: 10px; padding: 8px 10px; font-size: .9rem; margin-bottom: 10px; }
-    .reserva-botones { display: grid; grid-template-columns: repeat(auto-fit, minmax(66px, 1fr)); gap: 6px; }
+    .reserva-botones { display: grid; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 6px; }
     .reserva-botones button { border-radius: 14px; padding: 12px 4px; font-weight: 900; font-size: .88rem; line-height: 1.15; background: var(--gris); border: 2px solid var(--borde); }
     .reserva-botones .ok { background: var(--verde); border-color: var(--verde); color: #fff; }
     .reserva-botones .no { background: var(--rojo-claro); border-color: var(--rojo-borde); color: var(--rojo); }
@@ -797,6 +816,19 @@
           <button data-tema="dark" onclick="elegirTema('dark')">🌙 Noche</button>
         </div>
       </div>
+      <div class="tarjeta">
+        <p class="paso">💳 Cobros</p>
+        <div class="contador-fila">
+          <span>Seña para reservar</span>
+          <div class="stepper"><button type="button" onclick="cambiarSena(-10)">−</button><output id="ajusteSena">60</output><button type="button" onclick="cambiarSena(10)">+</button></div>
+        </div>
+        <p class="ayuda-campo">% del precio que se pide para guardar algo que hay en el puesto. Los pedidos a la editorial se pagan completos.</p>
+        <label class="mini" for="ajusteAlias">Alias de Mercado Pago para transferencias</label>
+        <input type="text" id="ajusteAlias" placeholder="Ej: lodeadri.mp" autocomplete="off" autocapitalize="off">
+        <label class="mini" for="ajusteTitular">A nombre de</label>
+        <input type="text" id="ajusteTitular" placeholder="Ej: Adrián Pérez" autocomplete="off" autocapitalize="words">
+        <p class="ayuda-campo">Si el cobro automático con Mercado Pago no está activado, al cliente le aparece este alias para transferir.</p>
+      </div>
       <button class="btn-principal btn-azul" onclick="guardarAjustes()">✅ Guardar ajustes</button>
       <button class="opcion ajuste-rafagas" onclick="irA('movimientos')">
         <span class="icono">📒</span>
@@ -995,7 +1027,7 @@
         <p class="paso"><span class="num">4</span>¿Cuántos tenés?</p>
         <div class="contador-fila">
           <span>Ejemplares</span>
-          <div class="stepper"><button type="button" onclick="pasoCant('nuevaCantidad', -1)">−</button><output id="nuevaCantidad" data-max="99">1</output><button type="button" onclick="pasoCant('nuevaCantidad', 1)">+</button></div>
+          <div class="stepper"><button type="button" onclick="pasoCant('nuevaCantidad', -1)">−</button><output id="nuevaCantidad" data-max="99" data-min="0">1</output><button type="button" onclick="pasoCant('nuevaCantidad', 1)">+</button></div>
         </div>
       </div>
 
@@ -1045,14 +1077,15 @@
 
     <!-- ===================== RESERVAS ===================== -->
     <section id="pantalla-reservas" class="oculto">
-      <div class="pestanas pestanas-3" id="tabsReservas">
-        <button data-tab="pendiente" onclick="elegirTabReservas(this)">🔔 Por confirmar</button>
-        <button data-tab="activa" class="activo" onclick="elegirTabReservas(this)">📌 Activas</button>
+      <div class="pestanas pestanas-2x2" id="tabsReservas">
+        <button data-tab="pendiente" onclick="elegirTabReservas(this)">🔔 Nuevas</button>
+        <button data-tab="activa" class="activo" onclick="elegirTabReservas(this)">📌 Reservas</button>
+        <button data-tab="solicitud" onclick="elegirTabReservas(this)">📦 Solicitudes</button>
         <button data-tab="cerrada" onclick="elegirTabReservas(this)">📒 Historial</button>
       </div>
       <input type="search" id="buscadorReservas" class="buscador" placeholder="🔎 Buscar por nombre o revista" oninput="dibujarReservas()">
       <div id="listaReservas"></div>
-      <button class="btn-principal btn-azul" onclick="elegirProductoParaReserva()">➕ Nueva reserva</button>
+      <button class="btn-principal btn-azul" onclick="elegirProductoParaReserva()">➕ Nueva reserva o pedido</button>
     </section>
 
     <!-- ===================== MOVIMIENTOS (ventas y bajas) ===================== -->
@@ -1110,7 +1143,7 @@
 
     <!-- ===================== CATÁLOGO PÚBLICO (para clientes) ===================== -->
     <section id="pantalla-catalogo" class="oculto">
-      <p class="cat-intro">Tocá una tapa para verla grande, o <b>Reservar</b> y el puesto te confirma por WhatsApp.</p>
+      <p class="cat-intro">Tocá una tapa para verla grande. <b>Reservar</b> te guarda lo que hay en el puesto (con una seña). Si algo no está, <b>Solicitar ejemplar</b> lo encarga a la editorial solo para vos, pagando el total.</p>
       <input type="search" id="buscadorCatalogo" class="buscador" placeholder="🔎 Buscar por título o palabra clave" oninput="dibujarCatalogo()">
       <div id="vistaSerie" class="oculto"></div>
       <div class="chips" id="filtrosCliente"></div>

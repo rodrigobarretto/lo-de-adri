@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '18';                // subir junto con VERSION de sw.js
+const VERSION_APP = '19';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 // Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
@@ -90,6 +90,9 @@ const estado = {
   motivos: [],
   movimientos: [],
   tabReservas: 'activa',
+  senaPct: Number(leerAjusteLocal('sena_pct')) || 60,   // seña para reservar lo que hay
+  mpAlias: leerAjusteLocal('mp_alias') || '',            // alias para transferir
+  mpTitular: leerAjusteLocal('mp_titular') || '',
   filtroMov: 'todo'
 };
 
@@ -170,6 +173,10 @@ function mensajeError(error) {
   if (/NO_ALCANZA/.test(m)) return 'No hay tantos disponibles (puede haber reservados).';
   if (/TELEFONO_INVALIDO/.test(m)) return 'El teléfono no parece válido. Poné código de área y número.';
   if (/FALTA_NOMBRE/.test(m)) return 'Falta el nombre.';
+  if (/FALTA_MP/.test(m)) return 'Todavía no está activado el cobro con Mercado Pago.';
+  if (/MP_ERROR/.test(m)) return 'Mercado Pago no respondió. Probá de nuevo en un rato.';
+  if (/YA_PAGADO/.test(m)) return 'Ya está todo pagado.';
+  if (/MONTO_INVALIDO/.test(m)) return 'Poné un monto válido.';
   if (/CLAVE_CORTA/.test(m)) return 'La clave tiene que tener 6 números o letras como mínimo.';
   if (/NO_A_VOS_MISMO/.test(m)) return 'No te podés quitar a vos mismo.';
   if (/ULTIMO_AUTORIZADO/.test(m)) return 'Tiene que quedar al menos una persona autorizada.';
@@ -276,6 +283,9 @@ async function cargarAjustes() {
     if (data.nombre) { estado.nombre = data.nombre; guardarAjusteLocal('nombre', data.nombre); }
     if (data.whatsapp) { estado.whatsapp = data.whatsapp; guardarAjusteLocal('whatsapp', data.whatsapp); }
     if (data.redes) { estado.redes = data.redes; dibujarRedesCatalogo(); }
+    if (data.sena_pct != null) { estado.senaPct = Number(data.sena_pct); guardarAjusteLocal('sena_pct', data.sena_pct); }
+    estado.mpAlias = data.mp_alias || ''; guardarAjusteLocal('mp_alias', estado.mpAlias);
+    estado.mpTitular = data.mp_titular || ''; guardarAjusteLocal('mp_titular', estado.mpTitular);
     if (data.dias_sin_repetir) { estado.diasSinRepetir = Number(data.dias_sin_repetir); guardarAjusteLocal('dias_sin_repetir', data.dias_sin_repetir); }
     aplicarNombre();
   } catch (e) {
@@ -614,7 +624,7 @@ async function guardarProducto() {
       imagen_url: imagenUrl,
       tipo: estado.tipo,
       visitas: 0,
-      cantidad: Math.max(1, Number($('nuevaCantidad').textContent) || 1),
+      cantidad: Math.max(0, Number($('nuevaCantidad').textContent) || 0),
       descripcion: $('nuevaDescripcion').value.trim().slice(0, 300) || null,
       fotos_extra: extrasUrls,
       editorial: estado.editorial || null
@@ -1293,7 +1303,9 @@ function dibujarHoja(id) {
       `${r.estado === 'pendiente' ? '🔔' : '📌'} ${escapar(r.cliente)} · ${r.cantidad} · ${r.pagado ? '💵 pagó' : '⏳ no pagó'}`).join('<br>')}</div>` : ''}
     <div class="grilla-acciones">
       <button class="vender" onclick="pantallaVenta(${pid})" ${disp ? '' : 'disabled'}><span class="ic">🛒</span>Vendí</button>
-      <button class="reservar" onclick="pantallaReserva(${pid}, null, 'producto')" ${disp ? '' : 'disabled'}><span class="ic">📌</span>Reservar</button>
+      ${disp
+        ? `<button class="reservar" onclick="pantallaReserva(${pid}, null, 'producto')"><span class="ic">📌</span>Reservar</button>`
+        : `<button class="reservar" onclick="pantallaReserva(${pid}, null, 'producto')"><span class="ic">📦</span>Pedir a editorial</button>`}
       <button onclick="pantallaAjuste(${pid})" ${disp ? '' : 'disabled'}><span class="ic">➖</span>Dar de baja</button>
       <button onclick="pantallaIngreso(${pid})"><span class="ic">➕</span>Llegaron más</button>
     </div>
@@ -1858,7 +1870,9 @@ function selectorCantidad(id, valor, max, precio) {
 function pasoCant(id, delta) {
   const el = $(id);
   const max = Number(el.dataset.max) || 99;
-  const v = Math.max(1, Math.min(max, (Number(el.textContent) || 1) + delta));
+  const min = el.dataset.min !== undefined ? Number(el.dataset.min) : 1;
+  const actual = Number(el.textContent);
+  const v = Math.max(min, Math.min(max, (isNaN(actual) ? min : actual) + delta));
   el.textContent = v;
   if (el.dataset.precio && $(id + 'Total')) $(id + 'Total').textContent = plata(v * Number(el.dataset.precio));
   if ($(id + 'Boton')) $(id + 'Boton').dataset.cant = v;
@@ -2014,10 +2028,11 @@ async function actualizarResumenReservas() {
   }
   const pend = estado.reservas.filter(r => r.estado === 'pendiente').length;
   const act = estado.reservas.filter(r => r.estado === 'activa').length;
+  const sol = estado.reservas.filter(r => r.estado === 'activa' && r.tipo === 'solicitud').length;
   op.classList.toggle('alerta', pend > 0);
   $('resumenReservas').textContent = pend
     ? `🔔 ${pend} nueva${pend === 1 ? '' : 's'} para confirmar · ${act} activa${act === 1 ? '' : 's'}`
-    : act ? `${act} reserva${act === 1 ? '' : 's'} activa${act === 1 ? '' : 's'}` : 'Nadie reservó todavía';
+    : act ? `${act - sol} reserva${act - sol === 1 ? '' : 's'}${sol ? ` · ${sol} pedido${sol === 1 ? '' : 's'} a editorial` : ''}` : 'Nadie reservó todavía';
 }
 
 async function cargarReservas() {
@@ -2041,20 +2056,24 @@ function elegirTabReservas(boton) {
   dibujarReservas();
 }
 
+function enTab(r, t) {
+  if (t === 'cerrada') return r.estado === 'entregada' || r.estado === 'cancelada';
+  if (t === 'pendiente') return r.estado === 'pendiente';
+  if (t === 'solicitud') return r.estado === 'activa' && r.tipo === 'solicitud';
+  return r.estado === 'activa' && r.tipo !== 'solicitud';
+}
+
 function dibujarReservas() {
-  const cuenta = t => estado.reservas.filter(r => t === 'cerrada' ? (r.estado === 'entregada' || r.estado === 'cancelada') : r.estado === t).length;
-  const nombres = { pendiente: '🔔 Por confirmar', activa: '📌 Activas', cerrada: '📒 Historial' };
+  const nombres = { pendiente: '🔔 Nuevas', activa: '📌 Reservas', solicitud: '📦 Solicitudes', cerrada: '📒 Historial' };
   document.querySelectorAll('#tabsReservas button').forEach(b => {
     const t = b.dataset.tab;
     b.classList.toggle('activo', t === estado.tabReservas);
-    const n = cuenta(t);
+    const n = estado.reservas.filter(r => enTab(r, t)).length;
     b.textContent = nombres[t] + (t !== 'cerrada' && n ? ` (${n})` : '');
   });
 
   const texto = $('buscadorReservas').value.trim().toLowerCase();
-  let lista = estado.reservas.filter(r => estado.tabReservas === 'cerrada'
-    ? (r.estado === 'entregada' || r.estado === 'cancelada')
-    : r.estado === estado.tabReservas);
+  let lista = estado.reservas.filter(r => enTab(r, estado.tabReservas));
   if (texto) {
     lista = lista.filter(r => {
       const p = productoPorId(r.producto_id);
@@ -2063,24 +2082,62 @@ function dibujarReservas() {
   }
   if (estado.tabReservas !== 'cerrada') lista.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
 
-  const vacio = { pendiente: 'No hay reservas nuevas de clientes.', activa: 'No hay reservas activas.', cerrada: 'Todavía no hay reservas cerradas.' };
-  $('listaReservas').innerHTML = lista.length ? lista.map(tarjetaReserva).join('') : `<p class="vacio">${vacio[estado.tabReservas]}</p>`;
+  const vacio = {
+    pendiente: 'No hay pedidos nuevos de clientes.',
+    activa: 'No hay reservas activas.',
+    solicitud: 'No hay ejemplares para pedir a la editorial.',
+    cerrada: 'Todavía no hay nada cerrado.'
+  };
+  $('listaReservas').innerHTML = (estado.tabReservas === 'solicitud' && lista.length
+      ? '<p class="ayuda-campo">Son ejemplares que pidieron y no hay en el puesto. Pedilos a la editorial y, cuando lleguen, tocá <b>📦 Llegó</b>.</p>' : '') +
+    (lista.length ? lista.map(tarjetaReserva).join('') : `<p class="vacio">${vacio[estado.tabReservas]}</p>`);
+}
+
+// Plata de una reserva: total, seña pedida, cobrado y lo que falta
+function cuentasDe(r) {
+  const p = productoPorId(r.producto_id);
+  const total = r.total != null ? Number(r.total) : (p ? Number(p.precio) * Number(r.cantidad) : 0);
+  const sena = r.sena != null ? Number(r.sena) : total;
+  const cobrado = Number(r.cobrado) || 0;
+  return { total, sena, cobrado, faltaSena: Math.max(0, sena - cobrado), falta: Math.max(0, total - cobrado) };
+}
+
+function chipPlata(r) {
+  const c = cuentasDe(r);
+  if (c.total > 0 && c.falta === 0) return '<span class="chip-pago si">💵 Pagó todo</span>';
+  if (c.faltaSena === 0 && c.cobrado > 0) return `<span class="chip-pago si">✅ Señó ${plata(c.cobrado)} · falta ${plata(c.falta)}</span>`;
+  if (r.tipo === 'solicitud') return `<span class="chip-pago no">⏳ Tiene que pagar ${plata(c.faltaSena)}</span>`;
+  return `<span class="chip-pago no">⏳ Falta seña ${plata(c.faltaSena)}${c.cobrado ? ` (pagó ${plata(c.cobrado)})` : ''}</span>`;
 }
 
 function tarjetaReserva(r) {
   const p = productoPorId(r.producto_id) || { titulo: 'Publicación borrada', precio: 0 };
   const rid = Number(r.id);
-  const total = Number(p.precio) * Number(r.cantidad);
+  const c = cuentasDe(r);
   const cerrada = r.estado === 'entregada' || r.estado === 'cancelada';
+  const sol = r.tipo === 'solicitud';
+  const cobrar = c.falta > 0 ? `<button onclick="pantallaCobro(${rid})">💵 Cobrar</button>` : '';
+  const link = c.falta > 0 ? `<button onclick="mandarLinkPago(${rid})">📲 Link de pago</button>` : '';
   let botones = '';
   if (r.estado === 'pendiente') {
     botones = `
       <button class="ok" onclick="confirmarReserva(${rid})">✅ Confirmar</button>
       <button class="no" onclick="pantallaCancelarReserva(${rid})">❌ Rechazar</button>
+      ${cobrar}
+      <button class="wa" onclick="escribirCliente(${rid})">💬</button>`;
+  } else if (r.estado === 'activa' && sol) {
+    botones = `
+      ${r.pedida_at
+        ? `<button class="ok" onclick="pantallaLlego(${rid})">📦 Llegó</button>`
+        : `<button class="ok" onclick="marcarPedida(${rid})">📞 Ya lo pedí</button>`}
+      ${cobrar}${link}
+      <button onclick="pantallaReserva(${Number(r.producto_id)}, ${rid}, 'reservas')">✏️ Editar</button>
+      <button class="no" onclick="pantallaCancelarReserva(${rid})">❌ Cancelar</button>
       <button class="wa" onclick="escribirCliente(${rid})">💬</button>`;
   } else if (r.estado === 'activa') {
     botones = `
       <button class="ok" onclick="pantallaEntregar(${rid})">🛍️ Entregada</button>
+      ${cobrar}${link}
       <button onclick="pantallaReserva(${Number(r.producto_id)}, ${rid}, 'reservas')">✏️ Editar</button>
       <button class="no" onclick="pantallaCancelarReserva(${rid})">❌ Cancelar</button>
       <button class="wa" onclick="escribirCliente(${rid})">💬</button>`;
@@ -2090,13 +2147,14 @@ function tarjetaReserva(r) {
     <div class="reserva-card ${r.estado === 'pendiente' ? 'pendiente' : ''} ${cerrada ? 'cerrada' : ''}">
       <div class="reserva-top">
         ${p.imagen_url ? `<img src="${escapar(p.imagen_url)}" alt="">` : '<div class="sin-foto">📰</div>'}
-        <div><div class="t">${escapar(p.titulo)}</div><div class="c">${r.cantidad} × ${plata(p.precio)} = ${plata(total)}</div></div>
+        <div><div class="t">${escapar(p.titulo)}</div><div class="c">${r.cantidad} × ${plata(r.precio != null ? r.precio : p.precio)} = ${plata(c.total)}</div></div>
       </div>
       <div class="reserva-cliente">👤 ${escapar(r.cliente)}<span class="tel">📞 ${escapar(telefonoLindo(r.telefono))}</span></div>
       <div class="reserva-chips">
+        ${sol ? `<span class="etiqueta sol">📦 Pedido a editorial${r.pedida_at ? ' · ya pedido' : ''}</span>` : ''}
         ${cerrada
-          ? `<span class="estado-cerrada">${r.estado === 'entregada' ? '🛍️ Entregada' : '❌ Cancelada'} ${fechaCierre}</span>`
-          : `<button class="chip-pago ${r.pagado ? 'si' : 'no'}" onclick="cambiarPagado(${rid})">${r.pagado ? '💵 Pagó' : '⏳ No pagó'}</button>`}
+          ? `<span class="estado-cerrada">${r.estado === 'entregada' ? '🛍️ Entregada' : '❌ Cancelada'} ${fechaCierre}</span>${c.cobrado ? `<span class="etiqueta">Cobrado ${plata(c.cobrado)}</span>` : ''}`
+          : chipPlata(r)}
         ${r.origen === 'cliente' ? '<span class="etiqueta">📱 La hizo el cliente</span>' : ''}
         <span class="etiqueta">${hace(r.created_at)}</span>
       </div>
@@ -2105,31 +2163,147 @@ function tarjetaReserva(r) {
     </div>`;
 }
 
+// ---------- Cobros ----------
+
+function pantallaCobro(rid, luegoEntregar) {
+  const r = reservaPorId(rid);
+  if (!r) return;
+  const c = cuentasDe(r);
+  const sugerido = luegoEntregar ? c.falta : (c.faltaSena > 0 ? c.faltaSena : c.falta);
+  mostrarHoja(`
+    <h3>💵 Cobrar a ${escapar(r.cliente)}</h3>
+    <p class="info">Total ${plata(c.total)} · ${r.tipo === 'solicitud' ? 'hay que cobrar todo' : `seña ${plata(c.sena)}`} · ya pagó ${plata(c.cobrado)}</p>
+    <p class="mini">¿Cuánto te dio?</p>
+    <div class="campo-precio"><span>$</span><input type="text" id="montoCobro" inputmode="numeric" value="${sugerido}" autocomplete="off"></div>
+    <div class="chips-montos">
+      ${c.faltaSena > 0 && c.faltaSena !== c.falta ? `<button type="button" onclick="$('montoCobro').value='${c.faltaSena}'">Seña ${plata(c.faltaSena)}</button>` : ''}
+      <button type="button" onclick="$('montoCobro').value='${c.falta}'">Todo ${plata(c.falta)}</button>
+    </div>
+    <p class="mini">¿Cómo pagó?</p>
+    <div class="elegir" id="medioCobro">
+      <button type="button" data-v="efectivo" class="activo" onclick="elegirMedio(this)">💵 Efectivo</button>
+      <button type="button" data-v="mercadopago" onclick="elegirMedio(this)">📱 Mercado Pago</button>
+    </div>
+    <div class="acciones espacio-arriba">
+      <button class="btn-principal" onclick="guardarCobro(${Number(rid)}, ${luegoEntregar ? 'true' : 'false'})">✅ ${luegoEntregar ? 'Cobré y entregué' : 'Cobré'}</button>
+      <button class="accion cerrar" onclick="cerrarHoja()">Cancelar</button>
+    </div>`);
+}
+
+function elegirMedio(boton) {
+  document.querySelectorAll('#medioCobro button').forEach(b => b.classList.toggle('activo', b === boton));
+}
+
+async function guardarCobro(rid, luegoEntregar) {
+  const monto = soloNumeros($('montoCobro').value);
+  const medio = (document.querySelector('#medioCobro button.activo') || {}).dataset.v || 'efectivo';
+  if (!monto || monto <= 0) { avisar('Poné cuánto te dio', 'mal'); return; }
+  mostrarCargando('Guardando…');
+  const { error } = await db.rpc('registrar_cobro', { rid, monto, medio, nota: null });
+  if (error) { ocultarCargando(); console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return; }
+  if (luegoEntregar) {
+    const e = await db.rpc('entregar_reserva', { rid });
+    ocultarCargando();
+    if (e.error) { console.error(e.error); avisar('❌ ' + mensajeError(e.error), 'mal', 5000); return; }
+    cerrarHoja();
+    avisar('🛍️ Cobrada, entregada y anotada como venta');
+  } else {
+    ocultarCargando();
+    cerrarHoja();
+    avisar(`💵 Cobro de ${plata(monto)} anotado`);
+  }
+  cargarReservas();
+}
+
+// Link de Mercado Pago para mandarle al cliente por WhatsApp
+async function mandarLinkPago(rid) {
+  const r = reservaPorId(rid);
+  if (!r) return;
+  const p = productoPorId(r.producto_id);
+  const c = cuentasDe(r);
+  const monto = c.faltaSena > 0 ? c.faltaSena : c.falta;
+  const que = r.tipo === 'solicitud' ? 'el pedido' : (c.faltaSena > 0 && c.faltaSena < c.falta ? 'la seña' : 'tu reserva');
+  mostrarCargando('Armando el link…');
+  let link = '';
+  try {
+    const { data, error } = await db.functions.invoke('mercadopago', { body: { rid } });
+    if (!error && data && data.link) link = data.link;
+  } catch (e) { /* sin cobro automático */ }
+  ocultarCargando();
+  let texto = `Hola ${r.cliente}! 👋 Para ${que} de ${r.cantidad} × *${p ? p.titulo : ''}* en ${estado.nombre} son ${plata(monto)}.`;
+  if (link) texto += `\nPodés pagar acá con Mercado Pago:\n${link}`;
+  else if (estado.mpAlias) texto += `\nPodés transferir al alias *${estado.mpAlias}*${estado.mpTitular ? ' (' + estado.mpTitular + ')' : ''} y mandarme el comprobante.`;
+  else texto += '\nLo podés pagar acá en el puesto.';
+  if (!link && !estado.mpAlias) avisar('Tip: poné el alias de Mercado Pago en Ajustes → Cobros', 'info', 4000);
+  abrirWhatsApp(numeroWhatsApp(r.telefono), texto);
+}
+
+// ---------- Solicitudes a la editorial ----------
+
+async function marcarPedida(rid) {
+  const r = reservaPorId(rid);
+  if (!(await actualizarReserva(rid, { pedida_at: new Date().toISOString() }, '📞 Anotado: ya lo pediste'))) return;
+  r.pedida_at = new Date().toISOString();
+  dibujarReservas();
+}
+
+function pantallaLlego(rid) {
+  const r = reservaPorId(rid);
+  const p = productoPorId(r.producto_id);
+  mostrarHoja(`
+    <h3>📦 ¿Llegó el pedido de ${escapar(r.cliente)}?</h3>
+    <p class="info">${r.cantidad} × ${escapar(p ? p.titulo : '')}<br>
+      Entra${r.cantidad === 1 ? '' : 'n'} al stock y queda${r.cantidad === 1 ? '' : 'n'} reservado${r.cantidad === 1 ? '' : 's'} para esa persona.</p>
+    <div class="acciones">
+      <button class="btn-principal" onclick="llegoSolicitud(${Number(rid)})">✅ Sí, llegó</button>
+      <button class="accion cerrar" onclick="cerrarHoja()">Todavía no</button>
+    </div>`);
+}
+
+async function llegoSolicitud(rid) {
+  const r = reservaPorId(rid);
+  mostrarCargando('Guardando…');
+  const { error } = await db.rpc('llego_solicitud', { rid });
+  ocultarCargando();
+  if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return; }
+  r.tipo = 'reserva';
+  mostrarHoja(`
+    <div class="exito">📦</div>
+    <h3>Ya está en el stock, reservado</h3>
+    <p class="info">¿Le avisás a ${escapar(r.cliente)} que ya lo puede pasar a buscar?</p>
+    <div class="acciones">
+      <button class="btn-principal btn-wa" onclick="escribirCliente(${Number(rid)}, 'llego')">💬 Avisarle por WhatsApp</button>
+      <button class="accion cerrar" onclick="cerrarHoja()">Listo</button>
+    </div>`);
+  cargarReservas();
+}
+
 // Formulario de reserva hecho por el puesto (nueva o editar)
 function pantallaReserva(pid, rid, desde) {
   const p = productoPorId(pid);
   const r = rid ? reservaPorId(rid) : null;
-  const max = disponible(p) + (r ? Number(r.cantidad) : 0);
-  if (max < 1) { avisar('No quedan disponibles para reservar', 'mal'); return; }
+  const solicitud = r ? r.tipo === 'solicitud' : disponible(p) < 1;
+  const max = solicitud ? 99 : disponible(p) + (r ? Number(r.cantidad) : 0);
   const volver = desde === 'producto' ? `dibujarHoja(${Number(pid)})` : 'cerrarHoja()';
   mostrarHoja(`
-    <h3>${r ? '✏️ Editar reserva' : '📌 Reservar'}</h3>
-    <p class="info">${escapar(p.titulo)} · ${plata(p.precio)} c/u · se pueden reservar ${max}</p>
+    <h3>${r ? (solicitud ? '✏️ Editar pedido' : '✏️ Editar reserva') : (solicitud ? '📦 Pedir a la editorial' : '📌 Reservar')}</h3>
+    <p class="info">${escapar(p.titulo)} · ${plata(p.precio)} c/u · ${solicitud ? 'no hay en el puesto: se encarga para esta persona y paga el total' : `se pueden reservar ${max} · seña ${estado.senaPct}%`}</p>
     <p class="mini">¿Cuántos?</p>
     ${selectorCantidad('cantHoja', r ? Number(r.cantidad) : 1, max, Number(p.precio))}
     <p class="mini">¿Para quién?</p>
     <input type="text" id="resNombre" placeholder="Nombre" value="${r ? escapar(r.cliente) : ''}" autocomplete="off" autocapitalize="words">
     <p class="mini">Teléfono</p>
     <input type="tel" id="resTel" placeholder="11 2345 6789" value="${r ? escapar(telefonoLindo(r.telefono)) : ''}" autocomplete="off">
-    <p class="mini">¿Pagó?</p>
+    ${r ? '' : `<p class="mini">¿Pagó?</p>
     <div class="elegir" id="resPago">
-      <button type="button" data-v="no" class="${r && r.pagado ? '' : 'activo'}" onclick="elegirPago(this)">⏳ Todavía no</button>
-      <button type="button" data-v="si" class="${r && r.pagado ? 'activo' : ''}" onclick="elegirPago(this)">💵 Ya pagó</button>
+      <button type="button" data-v="no" class="activo" onclick="elegirPago(this)">⏳ Todavía no</button>
+      <button type="button" data-v="si" onclick="elegirPago(this)">💵 Pagó todo en efectivo</button>
     </div>
+    <p class="ayuda-campo">Si deja una seña, anotala después con 💵 Cobrar.</p>`}
     <p class="mini">Nota (opcional)</p>
     <input type="text" id="resNota" placeholder="Ej: pasa el sábado" value="${r && r.nota ? escapar(r.nota) : ''}" autocomplete="off">
     <div class="acciones espacio-arriba">
-      <button class="btn-principal" onclick="guardarReserva(${Number(pid)}, ${rid ? Number(rid) : 'null'})">${r ? '✅ Guardar cambios' : '📌 Reservar'}</button>
+      <button class="btn-principal" onclick="guardarReserva(${Number(pid)}, ${rid ? Number(rid) : 'null'})">${r ? '✅ Guardar cambios' : (solicitud ? '📦 Anotar pedido' : '📌 Reservar')}</button>
       <button class="accion cerrar" onclick="${volver}">Cancelar</button>
     </div>`);
 }
@@ -2143,6 +2317,8 @@ async function guardarReserva(pid, rid) {
   const nombre = $('resNombre').value.trim();
   const tel = $('resTel').value.replace(/\D/g, '');
   const pagado = !!document.querySelector('#resPago button.activo[data-v="si"]');
+  const p = productoPorId(pid);
+  const solicitud = disponible(p) < 1;
   const nota = $('resNota').value.trim() || null;
   if (!nombre) { avisar('Falta el nombre', 'mal'); $('resNombre').focus(); return; }
   if (tel.length < 8) { avisar('Falta el teléfono con código de área', 'mal'); $('resTel').focus(); return; }
@@ -2150,11 +2326,11 @@ async function guardarReserva(pid, rid) {
   mostrarCargando('Guardando…');
   const { error } = rid
     ? await db.rpc('editar_reserva', { rid, cant, nombre, tel, pagado, nota })
-    : await db.rpc('crear_reserva', { pid, cant, nombre, tel, pagado, nota });
+    : await db.rpc('crear_pedido', { pid, cant, nombre, tel, nota, es_solicitud: solicitud, ya_pago: pagado });
   ocultarCargando();
   if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return; }
   cerrarHoja();
-  avisar(rid ? '✅ Reserva cambiada' : `📌 Reservado para ${nombre}`);
+  avisar(rid ? '✅ Cambios guardados' : (solicitud ? `📦 Pedido anotado para ${nombre}` : `📌 Reservado para ${nombre}`));
   refrescar();
 }
 
@@ -2198,7 +2374,8 @@ function pantallaCancelarReserva(rid) {
   mostrarHoja(`
     <h3>${rechazo ? '¿Rechazar la reserva?' : '¿Cancelar la reserva?'}</h3>
     <p class="info">${escapar(r.cliente)} · ${r.cantidad} × ${escapar(p ? p.titulo : '')}<br>
-      ${r.cantidad === 1 ? 'Vuelve a estar disponible' : `Las ${r.cantidad} vuelven a estar disponibles`} para vender.</p>
+      ${r.tipo === 'solicitud' ? 'Se borra el pedido a la editorial.' : `${r.cantidad === 1 ? 'Vuelve a estar disponible' : `Las ${r.cantidad} vuelven a estar disponibles`} para vender.`}
+      ${Number(r.cobrado) > 0 ? `<br><br>⚠️ Ya te pagó ${plata(r.cobrado)}: acordate de devolvérselo.` : ''}</p>
     <div class="acciones">
       <button class="accion peligro" style="text-align:center" onclick="cancelarReserva(${Number(rid)})">${rechazo ? '❌ Sí, rechazar' : '❌ Sí, cancelar'}</button>
       <button class="accion cerrar" onclick="cerrarHoja()">No</button>
@@ -2214,13 +2391,17 @@ async function cancelarReserva(rid) {
 function pantallaEntregar(rid) {
   const r = reservaPorId(rid);
   const p = productoPorId(r.producto_id);
+  const c = cuentasDe(r);
   mostrarHoja(`
     <h3>🛍️ ¿${escapar(r.cliente)} ya retiró?</h3>
-    <p class="info">${r.cantidad} × ${escapar(p ? p.titulo : '')} = ${plata((p ? Number(p.precio) : 0) * r.cantidad)}<br>
-      Se descuenta${r.cantidad === 1 ? '' : 'n'} del stock y queda anotado como venta.
-      ${r.pagado ? '' : '<br>⚠️ Figura que todavía no pagó.'}</p>
+    <p class="info">${r.cantidad} × ${escapar(p ? p.titulo : '')} = ${plata(c.total)}<br>
+      Se descuenta${r.cantidad === 1 ? '' : 'n'} del stock y queda anotado como venta.</p>
+    ${c.falta > 0 ? `<div class="caja-pago"><p>Falta cobrarle</p><p class="monto">${plata(c.falta)}</p>${c.cobrado ? `<p>(ya pagó ${plata(c.cobrado)})</p>` : ''}</div>` : '<p class="info">💵 Ya pagó todo.</p>'}
     <div class="acciones">
-      <button class="btn-principal" onclick="entregarReserva(${Number(rid)})">✅ Sí, la entregué</button>
+      ${c.falta > 0
+        ? `<button class="btn-principal" onclick="pantallaCobro(${Number(rid)}, true)">💵 Cobrar ${plata(c.falta)} y entregar</button>
+           <button class="accion" onclick="entregarReserva(${Number(rid)})">Entregar sin cobrar el resto</button>`
+        : `<button class="btn-principal" onclick="entregarReserva(${Number(rid)})">✅ Sí, la entregué</button>`}
       <button class="accion cerrar" onclick="cerrarHoja()">No</button>
     </div>`);
 }
@@ -2239,16 +2420,23 @@ function escribirCliente(rid, motivo) {
   const r = reservaPorId(rid);
   const p = productoPorId(r.producto_id);
   const titulo = p ? p.titulo : '';
+  const c = cuentasDe(r);
+  const sol = r.tipo === 'solicitud';
+  const falta = c.faltaSena > 0
+    ? `\n${sol ? 'Para encargarlo hay que pagar el total' : 'Para guardártelo falta la seña'}: ${plata(c.faltaSena)}.` + (estado.mpAlias ? ` Podés transferir al alias *${estado.mpAlias}*.` : '')
+    : '';
   const texto = motivo === 'confirmar'
-    ? `Hola ${r.cliente}! 👋 Te confirmamos la reserva en ${estado.nombre}:\n📌 ${r.cantidad} × *${titulo}*${p ? ' — ' + plata(Number(p.precio) * r.cantidad) : ''}\n¡Te esperamos!`
-    : `Hola ${r.cliente}! 👋 Te escribo de ${estado.nombre} por tu reserva de ${r.cantidad} × *${titulo}*.`;
+    ? `Hola ${r.cliente}! 👋 Te confirmamos ${sol ? 'el pedido' : 'la reserva'} en ${estado.nombre}:\n${sol ? '📦' : '📌'} ${r.cantidad} × *${titulo}* — ${plata(c.total)}${falta}\n${sol ? 'Te avisamos cuando llegue.' : '¡Te esperamos!'}`
+    : motivo === 'llego'
+    ? `Hola ${r.cliente}! 👋 ¡Llegó tu pedido a ${estado.nombre}!\n📦 ${r.cantidad} × *${titulo}*${c.falta > 0 ? `\nFalta pagar ${plata(c.falta)}.` : ''}\nTe lo guardamos, pasá cuando quieras.`
+    : `Hola ${r.cliente}! 👋 Te escribo de ${estado.nombre} por tu ${sol ? 'pedido' : 'reserva'} de ${r.cantidad} × *${titulo}*.`;
   abrirWhatsApp(numeroWhatsApp(r.telefono), texto);
 }
 
 // Nueva reserva desde la pantalla de reservas: primero elegir qué
 function elegirProductoParaReserva() {
   mostrarHoja(`
-    <h3>📌 ¿Qué quiere reservar?</h3>
+    <h3>📌 ¿Qué quiere reservar o pedir?</h3>
     <input type="search" id="buscaParaReservar" placeholder="🔎 Buscar por nombre" oninput="dibujarListaParaReservar()" autocomplete="off">
     <div class="lista-elegir" id="listaParaReservar"></div>
     <div class="acciones"><button class="accion cerrar" onclick="cerrarHoja()">Cancelar</button></div>`);
@@ -2256,12 +2444,13 @@ function elegirProductoParaReserva() {
 }
 
 function dibujarListaParaReservar() {
-  const lista = filtrarPorTexto(enVenta(), $('buscaParaReservar').value).slice(0, 40);
+  const lista = filtrarPorTexto(estado.productos, $('buscaParaReservar').value)
+    .sort((x, y) => (disponible(y) > 0) - (disponible(x) > 0)).slice(0, 40);
   $('listaParaReservar').innerHTML = lista.length ? lista.map(p => `
     <button onclick="pantallaReserva(${Number(p.id)}, null, 'reservas')">
       ${p.imagen_url ? `<img src="${escapar(p.imagen_url)}" alt="">` : '<span class="sin-foto">📰</span>'}
-      <span>${escapar(p.titulo)}<small>${plata(p.precio)} · ${disponible(p)} disponible${disponible(p) === 1 ? '' : 's'}</small></span>
-    </button>`).join('') : '<p class="vacio">No hay nada disponible con ese nombre.</p>';
+      <span>${escapar(p.titulo)}<small>${plata(p.precio)} · ${disponible(p) ? `${disponible(p)} disponible${disponible(p) === 1 ? '' : 's'}` : 'sin stock: se pide a la editorial'}</small></span>
+    </button>`).join('') : '<p class="vacio">No hay nada con ese nombre.</p>';
 }
 
 // =====================================================================
@@ -2490,6 +2679,13 @@ async function borrarMotivo(id) {
 function llenarAjustes() {
   $('ajusteNombre').value = estado.nombre;
   $('ajusteWhatsapp').value = estado.whatsapp;
+  $('ajusteSena').textContent = estado.senaPct;
+  $('ajusteAlias').value = estado.mpAlias;
+  $('ajusteTitular').value = estado.mpTitular;
+}
+
+function cambiarSena(delta) {
+  $('ajusteSena').textContent = Math.max(0, Math.min(100, (Number($('ajusteSena').textContent) || 0) + delta));
 }
 
 async function guardarAjustes() {
@@ -2500,7 +2696,10 @@ async function guardarAjustes() {
   if (whatsapp.length < 10) { avisar('El WhatsApp parece incompleto', 'mal'); return; }
 
   mostrarCargando('Guardando…');
-  const { error } = await db.from('ajustes').upsert({ id: 1, nombre, whatsapp });
+  const sena_pct = Number($('ajusteSena').textContent) || 0;
+  const mp_alias = $('ajusteAlias').value.trim().slice(0, 60);
+  const mp_titular = $('ajusteTitular').value.trim().slice(0, 60);
+  const { error } = await db.from('ajustes').upsert({ id: 1, nombre, whatsapp, sena_pct, mp_alias, mp_titular });
   ocultarCargando();
   if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return; }
 
@@ -2508,6 +2707,8 @@ async function guardarAjustes() {
   estado.whatsapp = whatsapp;
   guardarAjusteLocal('nombre', nombre);
   guardarAjusteLocal('whatsapp', whatsapp);
+  Object.assign(estado, { senaPct: sena_pct, mpAlias: mp_alias, mpTitular: mp_titular });
+  guardarAjusteLocal('sena_pct', sena_pct); guardarAjusteLocal('mp_alias', mp_alias); guardarAjusteLocal('mp_titular', mp_titular);
   aplicarNombre();
   avisar('✅ Ajustes guardados');
   irA('inicio', false);
@@ -3344,8 +3545,14 @@ async function arrancarCatalogo() {
     dibujarFiltrosCliente();
     // Link directo a una colección: ...?catalogo#serie-12
     const m = location.hash.match(/^#serie-(\d+)$/);
-    if (m && numerosDeSerie(m[1], true).length) abrirSerie(Number(m[1]), false);
+    if (m && numerosDeSerie(m[1]).length) abrirSerie(Number(m[1]), false);
     else dibujarCatalogo();
+    // Vuelta desde Mercado Pago
+    const pago = new URLSearchParams(location.search).get('pago');
+    if (pago === 'ok') avisar('✅ ¡Pago recibido! El puesto ya lo ve.', 'ok', 6000);
+    else if (pago === 'pendiente') avisar('⏳ El pago quedó pendiente. Cuando se acredite, el puesto lo ve.', 'info', 6000);
+    else if (pago === 'error') avisar('No se pudo hacer el pago. Podés probar de nuevo o pagar en el puesto.', 'mal', 6000);
+    if (pago) history.replaceState(null, '', location.pathname + '?catalogo' + location.hash);
   } catch (err) {
     console.error(err);
     $('catalogo').innerHTML = '<p class="vacio">No se pudo cargar el catálogo. Probá de nuevo en un rato.</p>';
@@ -3358,10 +3565,10 @@ function entradasCatalogo(texto) {
   const coincide = p => coincideBusqueda(p, texto);
   const entradas = [];
   const grupos = {};
-  enVenta().filter(coincide).forEach(p => {
+  estado.productos.filter(coincide).forEach(p => {
     const serie = p.serie_id ? serieDe(p.serie_id) : null;
     if (serie) (grupos[serie.id] = grupos[serie.id] || []).push(p);
-    else entradas.push({ tipo: 'producto', p, nombre: p.titulo, categoria: p.categoria, precio: Number(p.precio), fecha: p.created_at, nuevo: esNovedad(p) });
+    else entradas.push({ tipo: 'producto', p, nombre: p.titulo, categoria: p.categoria, precio: Number(p.precio), fecha: p.created_at, nuevo: esNovedad(p), hay: disponible(p) > 0 });
   });
   Object.keys(grupos).forEach(id => {
     const serie = serieDe(id);
@@ -3372,7 +3579,8 @@ function entradasCatalogo(texto) {
       categoria: serie.categoria,
       precio: Math.min(...items.map(p => Number(p.precio))),
       fecha: items.map(p => p.created_at).sort().pop(),
-      nuevo: items.some(esNovedad)
+      nuevo: items.some(esNovedad),
+      hay: items.some(p => disponible(p) > 0)
     });
   });
   return entradas;
@@ -3413,7 +3621,8 @@ function ordenarEntradas(lista) {
   else if (filtroCliente.orden === 'caro') copia.sort((a, b) => b.precio - a.precio);
   else if (filtroCliente.orden === 'nombre') copia.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es', { numeric: true }));
   else copia.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
-  return copia;
+  // Lo que hay en el puesto primero; lo que hay que pedir, después
+  return copia.filter(e => e.hay).concat(copia.filter(e => !e.hay));
 }
 
 function tarjetaCatalogo(p, enSerie) {
@@ -3432,9 +3641,12 @@ function tarjetaCatalogo(p, enSerie) {
       </button>
       <div class="cuerpo" onclick="if (event.target.tagName !== 'BUTTON') verProducto(${Number(p.id)})">
         ${titulo}
-        ${disponible(p) <= 2 && cantidadDe(p) >= 3 ? `<span class="ultimos">¡Quedan ${disponible(p)}!</span>` : ''}
+        ${disponible(p) > 0 && disponible(p) <= 2 && cantidadDe(p) >= 3 ? `<span class="ultimos">¡Quedan ${disponible(p)}!</span>` : ''}
+        ${disponible(p) > 0 ? '' : '<span class="sin-stock-cat">Sin stock · se encarga</span>'}
         <div class="precio">${plata(p.precio)}</div>
-        <button class="pedir" onclick="abrirPedido(${Number(p.id)})">📌 Reservar</button>
+        ${disponible(p) > 0
+          ? `<button class="pedir" onclick="abrirPedido(${Number(p.id)})">📌 Reservar</button>`
+          : `<button class="pedir solicitar" onclick="abrirPedido(${Number(p.id)})">📦 Solicitar ejemplar</button>`}
       </div>
     </div>`;
 }
@@ -3442,6 +3654,7 @@ function tarjetaCatalogo(p, enSerie) {
 function tarjetaSerie(e) {
   const portada = portadaDeSerie(e.serie);
   const cant = e.items.length;
+  const conStock = e.items.filter(p => disponible(p) > 0).length;
   const precios = new Set(e.items.map(p => Number(p.precio)));
   return `
     <button class="producto es-serie" onclick="abrirSerie(${Number(e.serie.id)})">
@@ -3449,6 +3662,7 @@ function tarjetaSerie(e) {
       <div class="tapa">
         ${portada ? `<img src="${escapar(portada)}" alt="${escapar(e.serie.nombre)}" loading="lazy">` : '<div class="sin-foto">📚</div>'}
         <span class="sello-cant">📚 ${cant} número${cant === 1 ? '' : 's'}</span>
+        ${conStock ? '' : '<span class="sello-sin-stock">Se encarga</span>'}
       </div>
       <div class="cuerpo">
         <div class="titulo">${escapar(e.serie.nombre)}</div>
@@ -3513,7 +3727,8 @@ function abrirSerie(id, agregarHistorial = true) {
   const serie = serieDe(id);
   if (!serie) return;
   filtroCliente.serie = Number(id);
-  const items = numerosDeSerie(id, true).sort(compararNumero);
+  const items = numerosDeSerie(id).sort(compararNumero);
+  const conStock = items.filter(p => disponible(p) > 0).length;
   const portada = portadaDeSerie(serie);
 
   $('vistaSerie').innerHTML = `
@@ -3522,7 +3737,7 @@ function abrirSerie(id, agregarHistorial = true) {
       ${portada ? `<img src="${escapar(portada)}" alt="">` : '<div class="sin-foto">📚</div>'}
       <div>
         <h2>${escapar(serie.nombre)}</h2>
-        <p>${items.length} número${items.length === 1 ? '' : 's'} disponible${items.length === 1 ? '' : 's'}</p>
+        <p>${conStock} número${conStock === 1 ? '' : 's'} en el puesto${items.length > conStock ? ` · ${items.length - conStock} se encarga${items.length - conStock === 1 ? '' : 'n'}` : ''}</p>
       </div>
     </div>
     <div class="grilla">${items.map(p => tarjetaCatalogo(p, true)).join('')}</div>
@@ -3568,35 +3783,45 @@ function verProducto(id) {
     <div class="acciones">
       ${disp
         ? `<button class="btn-principal" onclick="abrirPedido(${Number(p.id)})">📌 Reservar</button>`
-        : '<p class="info">Se agotó 😕</p>'}
+        : `<p class="info">No hay en el puesto ahora, pero te lo podemos encargar.</p>
+           <button class="btn-principal btn-azul" onclick="abrirPedido(${Number(p.id)})">📦 Solicitar ejemplar</button>`}
       <button class="accion wa" onclick="pedirProducto(${Number(p.id)})">💬 Consultar por WhatsApp</button>
       <button class="accion cerrar" onclick="cerrarHoja()">Seguir mirando</button>
     </div>`);
 }
 
-// El cliente reserva solo: queda "por confirmar" hasta que el puesto la acepte
+// El cliente reserva (si hay) o solicita un ejemplar a la editorial (si no hay).
+// Queda "por confirmar" hasta que el puesto lo acepte.
 function abrirPedido(id) {
   const p = productoPorId(id);
   if (!p) return;
   const disp = disponible(p);
-  if (disp < 1) { verProducto(id); return; }
+  const solicitud = disp < 1;
   let nombre = '', tel = '';
   try { nombre = localStorage.getItem('cliente_nombre') || ''; tel = localStorage.getItem('cliente_tel') || ''; } catch (e) {}
-  const max = Math.min(disp, 5);
+  const max = solicitud ? 5 : Math.min(disp, 5);
+  const explicacion = solicitud
+    ? `<div class="aviso-solicitud">📦 <b>Solicitar ejemplar</b> pide este número a la editorial <b>solo para vos</b>.
+        Para encargarlo hay que pagar el <b>total</b> por adelantado (Mercado Pago o en el puesto).
+        Te avisamos por WhatsApp cuando llega.</div>`
+    : (estado.senaPct > 0
+      ? `<p class="ayuda-campo">Para guardártelo pedimos una seña del ${estado.senaPct}% (<span id="senaPedido">${plata(Math.ceil(Number(p.precio) * estado.senaPct / 100))}</span>). El resto lo pagás cuando lo retirás.</p>`
+      : '<p class="ayuda-campo">Te lo guardamos y el puesto te confirma por WhatsApp.</p>');
   mostrarHoja(`
     <div class="pedido-cab">
       ${p.imagen_url ? `<img src="${escapar(p.imagen_url)}" alt="">` : ''}
       <div><h3>${escapar(p.titulo)}</h3><p class="precio-detalle chico">${plata(p.precio)}</p></div>
     </div>
+    ${solicitud ? explicacion : ''}
     <p class="mini">¿Cuántos querés?</p>
     ${selectorCantidad('cantHoja', 1, max, Number(p.precio))}
     <p class="mini">Tu nombre</p>
     <input type="text" id="cliNombre" value="${escapar(nombre)}" placeholder="Nombre" autocomplete="name" autocapitalize="words">
     <p class="mini">Tu WhatsApp</p>
     <input type="tel" id="cliTel" value="${escapar(tel)}" placeholder="11 2345 6789" autocomplete="tel">
-    <p class="ayuda-campo">Te lo guardamos y el puesto te confirma por WhatsApp.</p>
+    ${solicitud ? '' : explicacion}
     <div class="acciones espacio-arriba">
-      <button class="btn-principal" onclick="reservarCliente(${Number(p.id)})">📌 Reservar <span data-cant-de="cantHoja">1</span></button>
+      <button class="btn-principal ${solicitud ? 'btn-azul' : ''}" onclick="reservarCliente(${Number(p.id)})">${solicitud ? '📦 Solicitar' : '📌 Reservar'} <span data-cant-de="cantHoja">1</span></button>
       <button class="accion wa" onclick="pedirProducto(${Number(p.id)})">💬 Prefiero consultar por WhatsApp</button>
       <button class="accion cerrar" onclick="cerrarHoja()">Seguir mirando</button>
     </div>`);
@@ -3606,6 +3831,7 @@ let ultimaReservaCliente = null;
 
 async function reservarCliente(id) {
   const p = productoPorId(id);
+  const solicitud = disponible(p) < 1;
   const cant = Number($('cantHoja').textContent);
   const nombre = $('cliNombre').value.trim();
   const tel = $('cliTel').value.replace(/\D/g, '');
@@ -3613,31 +3839,99 @@ async function reservarCliente(id) {
   if (tel.length < 8) { avisar('Falta tu WhatsApp con código de área', 'mal'); $('cliTel').focus(); return; }
   try { localStorage.setItem('cliente_nombre', nombre); localStorage.setItem('cliente_tel', $('cliTel').value.trim()); } catch (e) {}
 
-  mostrarCargando('Reservando…');
-  const { error } = await db.rpc('crear_reserva', { pid: p.id, cant, nombre, tel, pagado: false, nota: null });
+  mostrarCargando(solicitud ? 'Enviando el pedido…' : 'Reservando…');
+  const { data: rid, error } = await db.rpc('crear_pedido', { pid: p.id, cant, nombre, tel, nota: null, es_solicitud: solicitud, ya_pago: false });
   ocultarCargando();
   if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return; }
 
   sumarInteres(p, 'pedir', PUNTOS_PEDIR);
-  p.reservado = reservadoDe(p) + cant;
-  ultimaReservaCliente = { nombre, cant, titulo: p.titulo, total: cant * Number(p.precio) };
+  if (!solicitud) p.reservado = reservadoDe(p) + cant;
+  const total = cant * Number(p.precio);
+  const aPagar = solicitud ? total : Math.ceil(total * estado.senaPct / 100);
+  ultimaReservaCliente = { rid: Number(rid), nombre, cant, titulo: p.titulo, total, aPagar, solicitud };
   if (filtroCliente.serie) abrirSerie(filtroCliente.serie, false);
   else { dibujarFiltrosCliente(); dibujarCatalogo(); }
+  pantallaPagoCliente();
+}
 
+// Después de reservar/solicitar: cómo pagar
+function pantallaPagoCliente() {
+  const r = ultimaReservaCliente;
+  if (!r) return;
+  const que = r.solicitud ? 'el total del pedido' : `la seña (${estado.senaPct}%)`;
   mostrarHoja(`
     <div class="exito">✅</div>
-    <h3>¡Listo, ${escapar(nombre)}!</h3>
-    <p class="info">Te reservamos ${cant} × ${escapar(p.titulo)}.<br>El puesto te va a confirmar por WhatsApp.</p>
+    <h3>¡Listo, ${escapar(r.nombre)}!</h3>
+    <p class="info">${r.solicitud ? 'Pediste' : 'Te reservamos'} ${r.cant} × ${escapar(r.titulo)} (${plata(r.total)}).</p>
+    ${r.aPagar > 0 ? `
+      <div class="caja-pago">
+        <p>Para ${r.solicitud ? 'encargarlo' : 'guardártelo'} falta pagar ${que}:</p>
+        <p class="monto">${plata(r.aPagar)}</p>
+      </div>
+      <div class="acciones">
+        <button class="btn-principal btn-mp" onclick="pagarConMercadoPago(${r.rid})">💳 Pagar con Mercado Pago</button>
+        <button class="accion" onclick="pagoEnLocal()">🏪 Prefiero pagar en el puesto</button>
+        <button class="accion cerrar" onclick="cerrarHoja()">Seguir mirando</button>
+      </div>` : `
+      <div class="acciones">
+        <button class="btn-principal btn-wa" onclick="avisarReserva()">💬 Avisar al puesto por WhatsApp</button>
+        <button class="accion cerrar" onclick="cerrarHoja()">Seguir mirando</button>
+      </div>`}`);
+}
+
+async function pagarConMercadoPago(rid) {
+  mostrarCargando('Abriendo Mercado Pago…');
+  try {
+    const { data, error } = await db.functions.invoke('mercadopago', { body: { rid } });
+    if (error) {
+      let codigo = error.message || 'error';
+      try { const j = await error.context.json(); if (j && j.error) codigo = j.error; } catch (e) {}
+      throw new Error(codigo);
+    }
+    if (data && data.link) { location.href = data.link; return; }
+    throw new Error('MP_ERROR');
+  } catch (err) {
+    ocultarCargando();
+    console.error(err);
+    // Si todavía no está el cobro automático, se puede transferir al alias
+    if (estado.mpAlias) pantallaTransferencia();
+    else avisar(mensajeError(err) + ' Podés pagar en el puesto.', 'mal', 6000);
+  }
+}
+
+function pantallaTransferencia() {
+  const r = ultimaReservaCliente;
+  mostrarHoja(`
+    <h3>💳 Pagar por transferencia</h3>
+    <p class="info">Transferí ${plata(r.aPagar)} desde Mercado Pago o tu banco a:</p>
+    <div class="caja-pago">
+      <p class="monto chico">${escapar(estado.mpAlias)}</p>
+      ${estado.mpTitular ? `<p>A nombre de ${escapar(estado.mpTitular)}</p>` : ''}
+      <button class="accion" onclick="copiarAlias()">📋 Copiar alias</button>
+    </div>
+    <p class="ayuda-campo">Después mandanos el comprobante por WhatsApp.</p>
     <div class="acciones">
-      <button class="btn-principal btn-wa" onclick="avisarReserva()">💬 Avisar al puesto por WhatsApp</button>
+      <button class="btn-principal btn-wa" onclick="avisarReserva('transferencia')">💬 Mandar comprobante por WhatsApp</button>
       <button class="accion cerrar" onclick="cerrarHoja()">Seguir mirando</button>
     </div>`);
 }
 
-function avisarReserva() {
+function copiarAlias() {
+  try { navigator.clipboard.writeText(estado.mpAlias); avisar('📋 Alias copiado'); } catch (e) { avisar(estado.mpAlias, 'info'); }
+}
+
+function pagoEnLocal() {
+  avisarReserva('local');
+  cerrarHoja();
+}
+
+function avisarReserva(como) {
   const r = ultimaReservaCliente;
   if (!r) return;
-  abrirWhatsApp(estado.whatsapp, `Hola! 👋 Soy ${r.nombre}. Reservé desde el catálogo:\n📌 ${r.cant} × *${r.titulo}* — ${plata(r.total)}\n¿Me confirman?`);
+  const que = r.solicitud ? '📦 Solicité (pedido a editorial)' : '📌 Reservé';
+  const pago = como === 'transferencia' ? `\n💳 Te transferí ${plata(r.aPagar)}, te paso el comprobante.`
+    : como === 'local' ? `\n🏪 Pago ${plata(r.aPagar)} en el puesto.` : '';
+  abrirWhatsApp(estado.whatsapp, `Hola! 👋 Soy ${r.nombre}. ${que} desde el catálogo:\n${r.cant} × *${r.titulo}* — ${plata(r.total)}${pago}\n¿Me confirman?`);
 }
 
 function pedirProducto(id) {
