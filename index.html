@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Mi puesto</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#9f1d20">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --azul: #1d4ed8;
+      --azul-claro: #dbeafe;
+      --verde: #15803d;
+      --verde-claro: #dcfce7;
+      --rojo: #b91c1c;
+      --rojo-claro: #fee2e2;
+      --ambar: #b45309;
+      --ambar-claro: #fef3c7;
+      --fondo: #f1f5f9;
+      --tarjeta: #ffffff;
+      --texto: #0f172a;
+      --suave: #475569;
+      --borde: #cbd5e1;
+      --wa: #16a34a;
+      --marca: #9f1d20;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html { font-size: 19px; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--fondo);
+      color: var(--texto);
+      line-height: 1.35;
+      padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    }
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; border: none; }
+    .oculto { display: none !important; }
+
+    /* ENCABEZADO */
+    header {
+      background: var(--marca);
+      color: #fff;
+      padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    }
+    .logo-cab { width: 46px; height: 46px; flex-shrink: 0; }
+    header h1 { margin: 0; font-size: 1.3rem; font-weight: 800; flex: 1; letter-spacing: .3px; }
+    .btn-volver {
+      background: rgba(255,255,255,.18);
+      color: #fff;
+      border-radius: 14px;
+      padding: 10px 16px;
+      font-weight: 700;
+      font-size: 1rem;
+    }
+
+    main { max-width: 560px; margin: 0 auto; padding: 16px; }
+
+    /* PANTALLA INICIO */
+    .saludo { font-size: 1.15rem; color: var(--suave); margin: 4px 4px 16px; }
+    .menu { display: grid; gap: 14px; }
+    .opcion {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      width: 100%;
+      text-align: left;
+      background: var(--tarjeta);
+      border: 3px solid var(--borde);
+      border-radius: 22px;
+      padding: 22px 20px;
+      min-height: 110px;
+      box-shadow: 0 2px 6px rgba(0,0,0,.06);
+    }
+    .opcion:active { transform: scale(.98); }
+    .opcion .icono { font-size: 2.6rem; line-height: 1; }
+    .opcion .tit { font-size: 1.35rem; font-weight: 800; display: block; }
+    .opcion .sub { font-size: .95rem; color: var(--suave); display: block; margin-top: 2px; }
+    .opcion.cargar { border-color: var(--azul); background: var(--azul-claro); }
+    .opcion.whatsapp { border-color: var(--wa); background: var(--verde-claro); }
+    .ayuda {
+      margin-top: 22px;
+      width: 100%;
+      background: var(--ambar-claro);
+      border: 2px solid #f59e0b;
+      color: var(--ambar);
+      border-radius: 18px;
+      padding: 16px;
+      font-weight: 800;
+      font-size: 1.05rem;
+    }
+    .estado { text-align: center; margin-top: 14px; font-size: .9rem; color: var(--suave); }
+    .estado .punto { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: #94a3b8; margin-right: 6px; vertical-align: middle; }
+    .estado.ok .punto { background: var(--verde); }
+    .estado.mal .punto { background: var(--rojo); }
+
+    /* FORMULARIO */
+    .tarjeta {
+      background: var(--tarjeta);
+      border-radius: 22px;
+      padding: 18px;
+      border: 1px solid var(--borde);
+      margin-bottom: 16px;
+    }
+    .paso { font-size: 1.1rem; font-weight: 800; margin: 0 0 10px; }
+    .paso .num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--azul); color: #fff; font-size: 1rem; margin-right: 8px;
+    }
+    .foto-caja {
+      width: 100%;
+      min-height: 190px;
+      border: 3px dashed var(--azul);
+      border-radius: 18px;
+      background: var(--azul-claro);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 6px;
+      color: var(--azul);
+      font-weight: 800;
+      font-size: 1.15rem;
+      overflow: hidden;
+      position: relative;
+    }
+    .foto-caja .grande { font-size: 3.2rem; }
+    .foto-caja img { width: 100%; max-height: 320px; object-fit: contain; background: #fff; }
+    .foto-acciones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .btn-sec {
+      background: #fff; border: 2px solid var(--borde); border-radius: 16px;
+      padding: 14px 10px; font-weight: 700; font-size: 1rem;
+    }
+    input[type=text], input[type=search], input[type=email], input[type=password], .campo-precio input {
+      width: 100%;
+      padding: 16px;
+      font-size: 1.2rem;
+      border: 2px solid var(--borde);
+      border-radius: 16px;
+      background: #fff;
+    }
+    input:focus { outline: none; border-color: var(--azul); box-shadow: 0 0 0 4px var(--azul-claro); }
+    .campo-precio { position: relative; }
+    .campo-precio span {
+      position: absolute; left: 18px; top: 50%; transform: translateY(-50%);
+      font-size: 1.4rem; font-weight: 800; color: var(--suave);
+    }
+    .campo-precio input { padding-left: 42px; font-size: 1.5rem; font-weight: 800; }
+    .elegir { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .elegir button {
+      background: #fff;
+      border: 3px solid var(--borde);
+      border-radius: 18px;
+      padding: 16px 8px;
+      font-size: 1.05rem;
+      font-weight: 800;
+      min-height: 76px;
+    }
+    .elegir button .chico { display: block; font-size: .8rem; font-weight: 600; color: var(--suave); margin-top: 2px; }
+    .elegir button.activo { border-color: var(--azul); background: var(--azul-claro); color: var(--azul); }
+    .btn-principal {
+      width: 100%;
+      background: var(--verde);
+      color: #fff;
+      font-size: 1.35rem;
+      font-weight: 900;
+      padding: 22px;
+      border-radius: 20px;
+      box-shadow: 0 4px 10px rgba(21,128,61,.3);
+    }
+    .btn-principal:disabled { background: #94a3b8; box-shadow: none; }
+    .btn-azul { background: var(--azul); box-shadow: 0 4px 10px rgba(29,78,216,.3); }
+
+    /* LISTA DE STOCK */
+    .pestanas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+    .pestanas.pestanas-3 { grid-template-columns: repeat(3, 1fr); }
+    .pestanas button { line-height: 1.15; padding-left: 2px !important; padding-right: 2px !important; font-size: .85rem !important;
+      background: #fff; border: 2px solid var(--borde); border-radius: 14px;
+      padding: 12px 4px; font-weight: 800; font-size: .95rem;
+    }
+    .pestanas button.activo { background: var(--azul); border-color: var(--azul); color: #fff; }
+    .buscador { margin-bottom: 12px; }
+    .contador { color: var(--suave); font-size: .95rem; margin: 0 4px 10px; }
+    .item {
+      display: flex; align-items: center; gap: 14px;
+      width: 100%; text-align: left;
+      background: var(--tarjeta);
+      border: 2px solid var(--borde);
+      border-radius: 18px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .item img, .item .sin-foto {
+      width: 76px; height: 96px; flex-shrink: 0;
+      object-fit: cover; border-radius: 10px; background: #e2e8f0;
+      display: flex; align-items: center; justify-content: center; font-size: 2rem;
+    }
+    .item .datos { flex: 1; min-width: 0; }
+    .item .titulo { font-weight: 800; font-size: 1.1rem; word-wrap: break-word; }
+    .item .precio { font-size: 1.35rem; font-weight: 900; color: var(--verde); margin-top: 2px; }
+    .item .etiquetas { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .etiqueta { font-size: .78rem; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: #e2e8f0; color: var(--suave); }
+    .etiqueta.nuevo { background: var(--ambar-claro); color: var(--ambar); }
+    .vacio { text-align: center; color: var(--suave); padding: 30px 10px; font-size: 1.1rem; }
+
+    /* HOJA DE ACCIONES */
+    .fondo-oscuro {
+      position: fixed; inset: 0; background: rgba(15,23,42,.55); z-index: 50;
+      display: flex; align-items: flex-end; justify-content: center;
+    }
+    .hoja {
+      background: #fff; width: 100%; max-width: 560px;
+      border-radius: 26px 26px 0 0;
+      padding: 20px 18px calc(22px + env(safe-area-inset-bottom));
+      max-height: 92vh; overflow-y: auto;
+    }
+    .hoja h3 { margin: 0 0 4px; font-size: 1.3rem; }
+    .hoja .info { color: var(--suave); margin-bottom: 14px; }
+    .hoja img { width: 100%; max-height: 260px; object-fit: contain; border-radius: 14px; background: #f8fafc; margin-bottom: 12px; }
+    .acciones { display: grid; gap: 10px; }
+    .accion {
+      width: 100%; padding: 18px; border-radius: 18px;
+      font-size: 1.15rem; font-weight: 800; text-align: left;
+      background: #f1f5f9; border: 2px solid var(--borde);
+    }
+    .accion.peligro { background: var(--rojo-claro); border-color: #fca5a5; color: var(--rojo); }
+    .accion.wa { background: var(--verde-claro); border-color: #86efac; color: var(--verde); }
+    .accion.cerrar { text-align: center; background: #fff; }
+
+    /* AVISOS */
+    #aviso {
+      position: fixed; left: 16px; right: 16px; bottom: calc(24px + env(safe-area-inset-bottom));
+      max-width: 528px; margin: 0 auto;
+      padding: 20px; border-radius: 20px;
+      font-size: 1.2rem; font-weight: 800; text-align: center;
+      z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+      transition: opacity .25s, transform .25s;
+    }
+    #aviso.ok { background: var(--verde); color: #fff; }
+    #aviso.mal { background: var(--rojo); color: #fff; }
+    #aviso.info { background: var(--texto); color: #fff; }
+    #aviso.escondido { opacity: 0; transform: translateY(20px); pointer-events: none; }
+
+    .cargando {
+      position: fixed; inset: 0; background: rgba(255,255,255,.85); z-index: 90;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      font-size: 1.3rem; font-weight: 800;
+    }
+    .rueda {
+      width: 56px; height: 56px; border: 6px solid var(--azul-claro); border-top-color: var(--azul);
+      border-radius: 50%; animation: girar .9s linear infinite;
+    }
+    @keyframes girar { to { transform: rotate(360deg); } }
+
+    /* CATÁLOGO PÚBLICO */
+    .cat-intro { text-align: center; margin: 4px 0 16px; color: var(--suave); }
+    .grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .producto {
+      background: #fff; border-radius: 18px; overflow: hidden; border: 1px solid var(--borde);
+      display: flex; flex-direction: column;
+    }
+    .producto img, .producto .sin-foto {
+      width: 100%; aspect-ratio: 3 / 4; object-fit: cover; background: #e2e8f0;
+      display: flex; align-items: center; justify-content: center; font-size: 3rem;
+    }
+    .producto .cuerpo { padding: 10px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    .producto .titulo { font-weight: 800; font-size: .95rem; flex: 1; }
+    .producto .precio { font-weight: 900; color: var(--verde); font-size: 1.15rem; }
+    .producto .pedir {
+      background: var(--wa); color: #fff; font-weight: 800; border-radius: 12px;
+      padding: 10px 6px; font-size: .95rem; margin-top: 4px;
+    }
+    .chips {
+      display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 10px; margin: 0 -2px 4px;
+      scrollbar-width: none;
+    }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip {
+      flex-shrink: 0; background: #fff; border: 2px solid var(--borde); border-radius: 999px;
+      padding: 9px 14px; font-weight: 800; font-size: .9rem; white-space: nowrap;
+    }
+    .chip span { color: var(--suave); font-weight: 700; margin-left: 2px; }
+    .chip.activo { background: var(--azul); border-color: var(--azul); color: #fff; }
+    .chip.activo span { color: #bfdbfe; }
+    .barra-orden {
+      display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+      color: var(--suave); font-size: .9rem; margin: 0 2px 12px;
+    }
+    .barra-orden select {
+      font-size: .9rem; font-weight: 700; padding: 8px 10px; border-radius: 12px;
+      border: 2px solid var(--borde); background: #fff; margin-left: 4px;
+    }
+    .producto { position: relative; }
+    .sello-nuevo {
+      position: absolute; top: 8px; left: 8px; background: var(--ambar-claro); color: var(--ambar);
+      font-size: .75rem; font-weight: 900; padding: 4px 9px; border-radius: 999px; z-index: 1;
+    }
+    .seccion-tit { font-size: 1.2rem; font-weight: 900; margin: 20px 4px 10px; }
+    .cat-pie { text-align: center; color: var(--suave); font-size: .85rem; margin-top: 26px; }
+
+    .link-ajustes {
+      display: block; margin: 18px auto 0; background: none;
+      color: var(--suave); font-size: .9rem; font-weight: 600; padding: 8px 14px;
+    }
+    .ayuda-campo { color: var(--suave); font-size: .9rem; margin: 8px 2px 0; }
+
+    /* COLECCIONES */
+    .sub-bloque { margin-top: 14px; }
+    .mini { font-weight: 800; color: var(--suave); margin: 14px 2px 8px; font-size: .95rem; }
+    .lista-series { display: grid; gap: 8px; margin-bottom: 4px; }
+    .serie-opcion {
+      display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+      background: #fff; border: 3px solid var(--borde); border-radius: 16px; padding: 8px 12px;
+      font-size: 1.05rem; font-weight: 800; min-height: 64px;
+    }
+    .serie-opcion img, .serie-opcion .sin-foto {
+      width: 40px; height: 52px; object-fit: cover; border-radius: 6px; background: #e2e8f0;
+      display: flex; align-items: center; justify-content: center; font-size: 1.3rem; flex-shrink: 0;
+    }
+    .serie-opcion .cant { display: block; font-size: .8rem; color: var(--suave); font-weight: 600; }
+    .serie-opcion.activo { border-color: var(--azul); background: var(--azul-claro); color: var(--azul); }
+    .serie-opcion.nueva { justify-content: center; border-style: dashed; color: var(--azul); }
+    .campo-numero input { padding-left: 62px; }
+    #bloqueSerieNueva { margin: 6px 0 4px; }
+
+    .producto.es-serie { cursor: pointer; text-align: left; padding: 0; font: inherit; color: inherit; }
+    .producto.es-serie .tapa { position: relative; }
+    .producto.es-serie .tapa::after {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      box-shadow: inset 0 -60px 40px -30px rgba(0,0,0,.45);
+    }
+    .sello-cant {
+      position: absolute; bottom: 8px; left: 8px; z-index: 1; color: #fff;
+      font-weight: 900; font-size: .85rem; text-shadow: 0 1px 3px rgba(0,0,0,.5);
+    }
+    .producto .desde { font-size: .85rem; color: var(--suave); font-weight: 700; }
+    .ver-numeros {
+      background: var(--azul); color: #fff; font-weight: 800; border-radius: 12px;
+      padding: 10px 6px; font-size: .95rem; margin-top: 4px; text-align: center;
+    }
+    .serie-cabecera { display: flex; gap: 14px; align-items: center; margin: 4px 0 16px; }
+    .serie-cabecera img, .serie-cabecera .sin-foto {
+      width: 84px; height: 112px; object-fit: cover; border-radius: 10px; background: #e2e8f0; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 2.4rem;
+    }
+    .serie-cabecera h2 { margin: 0 0 4px; font-size: 1.35rem; }
+    .serie-cabecera p { margin: 0; color: var(--suave); }
+    .btn-todas {
+      background: #fff; border: 2px solid var(--borde); border-radius: 14px;
+      padding: 10px 16px; font-weight: 800; margin-bottom: 12px;
+    }
+    .producto .numero-grande { font-size: 1.2rem; font-weight: 900; }
+
+    /* RÁFAGAS */
+    .ajuste-rafagas { margin-top: 16px; }
+    .aviso-rafaga {
+      display: flex; align-items: center; gap: 16px; width: 100%; text-align: left;
+      background: #ffedd5; border: 3px solid #fb923c; border-radius: 22px; padding: 18px;
+      margin-bottom: 14px; color: #9a3412;
+    }
+    .aviso-rafaga .icono { font-size: 2.4rem; }
+    .aviso-rafaga .tit { font-size: 1.25rem; font-weight: 900; display: block; }
+    .aviso-rafaga .sub { font-size: .95rem; display: block; margin-top: 2px; color: #9a3412; }
+    .rafaga-item {
+      display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+      background: var(--tarjeta); border: 2px solid var(--borde); border-radius: 18px; padding: 14px 16px;
+      margin-bottom: 10px;
+    }
+    .rafaga-item .hora { font-size: 1.6rem; font-weight: 900; font-variant-numeric: tabular-nums; min-width: 82px; }
+    .rafaga-item .datos { flex: 1; min-width: 0; }
+    .rafaga-item .nombre { font-weight: 800; font-size: 1.05rem; display: block; margin-top: 4px; }
+    .rafaga-item .redes-linea { display: block; font-size: .95rem; }
+    .rafaga-item .detalle { display: block; }
+    .rafaga-item { align-items: flex-start; }
+    .rafaga-item .hora { font-size: 1.4rem; min-width: 70px; padding-top: 2px; }
+    .rafaga-item .detalle { color: var(--suave); font-size: .85rem; }
+    .rafaga-item.apagada { opacity: .55; }
+    .estado-rafaga { font-size: .75rem; font-weight: 900; padding: 4px 9px; border-radius: 999px; background: #e2e8f0; color: var(--suave); white-space: nowrap; }
+    .estado-rafaga.hecha { background: var(--verde-claro); color: var(--verde); }
+    .estado-rafaga.pendiente { background: #ffedd5; color: #9a3412; }
+    .historial-caja { margin-top: 18px; }
+    .historial { display: grid; gap: 6px; font-size: .9rem; }
+    .historial div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--borde); padding: 6px 0; }
+    .historial span:last-child { color: var(--suave); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .interruptor { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-weight: 800; }
+    .interruptor input { width: 26px; height: 26px; accent-color: var(--verde); }
+    .campo-hora, .campo-fecha input, .select-grande {
+      width: 100%; padding: 14px; font-size: 1.3rem; font-weight: 800; border: 2px solid var(--borde);
+      border-radius: 16px; background: #fff;
+    }
+    .select-grande { font-size: 1rem; }
+    .campo-fecha { display: grid; gap: 4px; font-size: .85rem; color: var(--suave); font-weight: 700; min-width: 0; }
+    .campo-fecha input { min-width: 0; max-width: 100%; }
+    .campo-fecha input { font-size: 1rem; padding: 12px; }
+    .dos-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .chips-dias { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .chips-dias button, .chips-redes button {
+      background: #fff; border: 2px solid var(--borde); border-radius: 14px; padding: 12px 0; font-weight: 900;
+    }
+    .chips-redes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .chips-redes button { padding: 14px 8px; font-size: .95rem; }
+    .chips-dias button.activo, .chips-redes button.activo { background: var(--azul); border-color: var(--azul); color: #fff; }
+    .contador-fila { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; font-weight: 800; font-size: 1.05rem; }
+    .stepper { display: flex; align-items: center; gap: 4px; }
+    .stepper button { width: 48px; height: 48px; border-radius: 14px; background: var(--azul-claro); color: var(--azul); font-size: 1.6rem; font-weight: 900; }
+    .stepper output { min-width: 44px; text-align: center; font-size: 1.5rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+    .acciones-rafaga { margin-top: 12px; }
+    .chico-linea { display: block; font-size: .8rem; font-weight: 600; color: var(--suave); }
+    .contador-fila > span { min-width: 0; }
+    .total-rafaga { margin: 10px 0 0; padding: 12px; border-radius: 14px; background: var(--azul-claro); color: var(--azul); font-weight: 900; text-align: center; }
+    .campo-fecha .campo-hora { font-size: 1.15rem; padding: 12px; min-width: 0; max-width: 100%; }
+    .historias { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+    .historias img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 10px; background: #e2e8f0; }
+    .historias .cargando-hist { aspect-ratio: 9 / 16; border-radius: 10px; background: #e2e8f0; }
+    .lista-previa { display: grid; gap: 6px; margin-bottom: 14px; }
+    .lista-previa div { display: flex; gap: 10px; align-items: center; font-weight: 700; }
+    .lista-previa img { width: 36px; height: 48px; object-fit: cover; border-radius: 6px; }
+    .lista-previa .tag { font-size: .7rem; font-weight: 900; padding: 2px 7px; border-radius: 999px; background: var(--ambar-claro); color: var(--ambar); }
+
+    .ver-detalle { display: block; width: 100%; padding: 0; background: none; border: 0; }
+    .producto .cuerpo { cursor: pointer; }
+    .foto-detalle { width: 100%; max-height: 52vh; object-fit: contain; border-radius: 14px; background: #f8fafc; margin-bottom: 10px; }
+    .precio-detalle { font-size: 2rem; font-weight: 900; color: var(--verde); margin: 4px 0 14px; }
+    .btn-wa { background: var(--wa); }
+
+    /* INVENTARIO Y RESERVAS */
+    .ajuste-extra { margin-top: 10px; }
+    .espacio-arriba { margin-top: 12px; }
+    .fila-contador { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .fila-contador .contador { margin: 0 4px; }
+    .btn-chico { background: #fff; border: 2px solid var(--borde); border-radius: 12px; padding: 8px 12px; font-weight: 800; font-size: .9rem; }
+    .opcion.alerta { border-color: #fb923c; background: #ffedd5; }
+    .opcion.alerta .sub { color: #9a3412; font-weight: 700; }
+    .etiqueta.agotado { background: var(--rojo-claro); color: var(--rojo); }
+    .etiqueta.cant { background: var(--azul-claro); color: var(--azul); }
+    .etiqueta.res { background: #ffedd5; color: #9a3412; }
+    .item.agotado img, .item.agotado .sin-foto { filter: grayscale(1); opacity: .6; }
+    .item .marca { width: 30px; height: 30px; border-radius: 50%; border: 3px solid var(--borde); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 900; color: #fff; }
+    .item.elegido { border-color: var(--azul); background: var(--azul-claro); }
+    .item.elegido .marca { background: var(--azul); border-color: var(--azul); }
+    body.con-barra main { padding-bottom: 150px; }
+    body.con-barra #aviso { bottom: calc(140px + env(safe-area-inset-bottom, 0px)); }
+    .barra-seleccion {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; background: var(--texto); color: #fff;
+      padding: 10px max(12px, env(safe-area-inset-left, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-right, 0px));
+      box-shadow: 0 -6px 18px rgba(0,0,0,.2); display: grid; gap: 8px;
+    }
+    .fila-sel { display: flex; align-items: center; gap: 8px; max-width: 560px; margin: 0 auto; width: 100%; }
+    .fila-sel span { flex: 1; text-align: center; font-weight: 800; }
+    .fila-sel button { background: rgba(255,255,255,.14); color: #fff; border-radius: 12px; padding: 10px 12px; font-weight: 800; }
+    .fila-sel .cerrar-sel { padding: 10px 14px; }
+    .acciones-sel button { flex: 1; background: #fff; color: var(--texto); padding: 12px 6px; font-size: .95rem; }
+    .acciones-sel button.peligro { background: var(--rojo-claro); color: var(--rojo); }
+    .acciones-sel button:disabled { opacity: .45; }
+
+    .stock-linea { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 14px; }
+    .stock-linea span { background: #f1f5f9; border-radius: 999px; padding: 6px 12px; font-weight: 800; font-size: .95rem; }
+    .stock-linea .ok { background: var(--verde-claro); color: var(--verde); }
+    .stock-linea .no { background: var(--rojo-claro); color: var(--rojo); }
+    .grilla-acciones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .grilla-acciones button {
+      background: #fff; border: 3px solid var(--borde); border-radius: 18px; padding: 14px 8px;
+      font-size: 1.05rem; font-weight: 900; min-height: 84px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    }
+    .grilla-acciones button .ic { font-size: 1.8rem; }
+    .grilla-acciones button:disabled { opacity: .4; }
+    .grilla-acciones .vender { border-color: var(--verde); background: var(--verde-claro); color: var(--verde); }
+    .grilla-acciones .reservar { border-color: #fb923c; background: #ffedd5; color: #9a3412; }
+    .mini-reservas { background: #fff7ed; border: 2px solid #fed7aa; border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; font-size: .95rem; }
+    .mini-reservas b { display: block; margin-bottom: 4px; }
+    .stepper.grande output { font-size: 2rem; min-width: 64px; }
+    .stepper.grande button { width: 60px; height: 60px; font-size: 2rem; }
+    .fila-cant { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+    .total-hoja { font-size: 1.15rem; font-weight: 900; color: var(--verde); }
+    .hoja input[type=text], .hoja input[type=tel], .hoja input[type=search] { margin-bottom: 4px; }
+    .chips-motivos { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .chips-motivos button { background: #fff; border: 2px solid var(--borde); border-radius: 999px; padding: 10px 14px; font-weight: 800; }
+    .chips-motivos button.activo { background: var(--azul); border-color: var(--azul); color: #fff; }
+
+    .reserva-card { background: var(--tarjeta); border: 2px solid var(--borde); border-radius: 18px; padding: 14px; margin-bottom: 12px; }
+    .reserva-card.pendiente { border-color: #fb923c; }
+    .reserva-card.cerrada { opacity: .75; }
+    .reserva-top { display: flex; gap: 12px; align-items: center; }
+    .reserva-top img, .reserva-top .sin-foto { width: 52px; height: 68px; object-fit: cover; border-radius: 8px; background: #e2e8f0; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+    .reserva-top .t { font-weight: 900; font-size: 1.05rem; }
+    .reserva-top .c { color: var(--suave); font-weight: 700; }
+    .reserva-cliente { margin: 10px 0 8px; font-size: 1.05rem; font-weight: 800; }
+    .reserva-cliente .tel { display: block; color: var(--suave); font-weight: 700; font-size: .95rem; user-select: text; }
+    .reserva-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+    .chip-pago { border-radius: 999px; padding: 8px 12px; font-weight: 900; font-size: .9rem; border: 2px solid transparent; }
+    .chip-pago.si { background: var(--verde-claro); color: var(--verde); border-color: #86efac; }
+    .chip-pago.no { background: var(--ambar-claro); color: var(--ambar); border-color: #fcd34d; }
+    .reserva-nota { background: #f8fafc; border-radius: 10px; padding: 8px 10px; font-size: .9rem; margin-bottom: 10px; }
+    .reserva-botones { display: grid; grid-template-columns: repeat(auto-fit, minmax(66px, 1fr)); gap: 6px; }
+    .reserva-botones button { border-radius: 14px; padding: 12px 4px; font-weight: 900; font-size: .88rem; line-height: 1.15; background: #f1f5f9; border: 2px solid var(--borde); }
+    .reserva-botones .ok { background: var(--verde); border-color: var(--verde); color: #fff; }
+    .reserva-botones .no { background: var(--rojo-claro); border-color: #fca5a5; color: var(--rojo); }
+    .reserva-botones .wa { background: var(--verde-claro); border-color: #86efac; color: var(--verde); }
+    .estado-cerrada { font-weight: 900; font-size: .85rem; }
+    .lista-elegir { display: grid; gap: 8px; max-height: 50vh; overflow-y: auto; margin: 8px 0 12px; }
+    .lista-elegir button { display: flex; align-items: center; gap: 10px; text-align: left; background: #fff; border: 2px solid var(--borde); border-radius: 14px; padding: 8px 10px; font-weight: 800; }
+    .lista-elegir img, .lista-elegir .sin-foto { width: 36px; height: 48px; object-fit: cover; border-radius: 6px; background: #e2e8f0; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .lista-elegir small { display: block; color: var(--suave); font-weight: 600; }
+
+    .resumen-mov { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+    .resumen-mov div { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 16px; padding: 12px 8px; text-align: center; }
+    .resumen-mov b { display: block; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+    .resumen-mov small { color: var(--suave); font-weight: 700; font-size: .78rem; display: block; }
+    .dia-mov { font-weight: 900; color: var(--suave); margin: 14px 4px 6px; font-size: .95rem; }
+    .mov { display: flex; gap: 10px; align-items: center; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 10px 12px; margin-bottom: 6px; }
+    .mov .ic { font-size: 1.3rem; }
+    .mov .d { flex: 1; min-width: 0; }
+    .mov .d b { display: block; }
+    .mov .d small { color: var(--suave); }
+    .mov .n { font-weight: 900; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .motivo-fila { display: flex; align-items: center; gap: 8px; background: var(--tarjeta); border: 2px solid var(--borde); border-radius: 16px; padding: 10px 12px; margin-bottom: 8px; font-weight: 800; font-size: 1.05rem; }
+    .motivo-fila span { flex: 1; }
+    .motivo-fila button { background: #f1f5f9; border-radius: 12px; padding: 10px 12px; font-size: 1.1rem; }
+
+    .pedido-cab { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; }
+    .pedido-cab img { width: 84px; height: 112px; object-fit: cover; border-radius: 10px; flex-shrink: 0; }
+    .pedido-cab h3 { margin: 0; }
+    .precio-detalle.chico { font-size: 1.4rem; margin: 4px 0 0; }
+    .ultimos { color: var(--rojo); font-weight: 900; font-size: .8rem; }
+    .exito { font-size: 3.5rem; text-align: center; }
+
+    /* INGRESO */
+    .login { max-width: 420px; margin: 30px auto; }
+    .login p { color: var(--suave); }
+    .login input { margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <button id="btnVolver" class="btn-volver oculto" onclick="volver()">◀ Volver</button>
+    <img id="logoCab" class="logo-cab" src="logo.png" alt="">
+    <h1 id="tituloPantalla"></h1>
+  </header>
+
+  <main>
+
+    <!-- ===================== INGRESO (lo hace Rodrigo una sola vez) ===================== -->
+    <section id="pantalla-login" class="oculto">
+      <div class="tarjeta login">
+        <p class="paso">🔐 Activar este teléfono</p>
+        <p>Este paso se hace una sola vez. Después la app queda abierta.</p>
+        <input type="email" id="loginEmail" placeholder="Correo" autocomplete="username">
+        <input type="password" id="loginClave" placeholder="Contraseña" autocomplete="current-password">
+        <button class="btn-principal btn-azul" onclick="ingresar()">Entrar</button>
+      </div>
+    </section>
+
+    <!-- ===================== INICIO ===================== -->
+    <section id="pantalla-inicio" class="oculto">
+      <p class="saludo" id="saludo">¡Buen día! ¿Qué querés hacer?</p>
+      <div id="avisoRafaga" class="oculto"></div>
+      <div class="menu">
+        <button class="opcion cargar" onclick="irA('cargar')">
+          <span class="icono">📷</span>
+          <span><span class="tit">Cargar revista</span><span class="sub">Sacale una foto y poné el precio</span></span>
+        </button>
+        <button class="opcion" onclick="irA('stock')">
+          <span class="icono">📋</span>
+          <span><span class="tit">Ver lo que tengo</span><span class="sub" id="resumenStock">Todo lo cargado</span></span>
+        </button>
+        <button class="opcion" id="opcionReservas" onclick="irA('reservas')">
+          <span class="icono">📌</span>
+          <span><span class="tit">Reservas</span><span class="sub" id="resumenReservas">Lo que la gente te pidió guardar</span></span>
+        </button>
+        <button class="opcion whatsapp" onclick="compartirCatalogo()">
+          <span class="icono">📲</span>
+          <span><span class="tit">Mandar catálogo</span><span class="sub">Por WhatsApp a un cliente</span></span>
+        </button>
+      </div>
+      <button class="ayuda" onclick="pedirAyuda()">🙋 Necesito ayuda (llamar a Rodrigo)</button>
+      <p class="estado" id="estadoConexion"><span class="punto"></span><span>Revisando conexión…</span></p>
+      <button class="link-ajustes" onclick="irA('ajustes')">⚙️ Ajustes</button>
+    </section>
+
+    <!-- ===================== AJUSTES ===================== -->
+    <section id="pantalla-ajustes" class="oculto">
+      <div class="tarjeta">
+        <p class="paso">Nombre del puesto</p>
+        <input type="text" id="ajusteNombre" placeholder="Ej: Lo de Adri" autocomplete="off">
+        <p class="ayuda-campo">Aparece arriba en la app, en el catálogo y en los mensajes de WhatsApp.</p>
+      </div>
+      <div class="tarjeta">
+        <p class="paso">WhatsApp para pedidos</p>
+        <input type="text" id="ajusteWhatsapp" inputmode="numeric" placeholder="5491112345678" autocomplete="off">
+        <p class="ayuda-campo">Con 549 adelante, sin espacios ni +. Acá llegan los pedidos de los clientes.</p>
+      </div>
+      <button class="btn-principal btn-azul" onclick="guardarAjustes()">✅ Guardar ajustes</button>
+      <button class="opcion ajuste-rafagas" onclick="irA('movimientos')">
+        <span class="icono">📒</span>
+        <span><span class="tit">Ventas y bajas</span><span class="sub">Todo lo que salió del stock</span></span>
+      </button>
+      <button class="opcion ajuste-extra" onclick="irA('motivos')">
+        <span class="icono">🏷️</span>
+        <span><span class="tit">Motivos de baja</span><span class="sub">Se rompió, lo regalé… agregar, cambiar o borrar</span></span>
+      </button>
+      <button class="opcion ajuste-extra" onclick="irA('rafagas')">
+        <span class="icono">📣</span>
+        <span><span class="tit">Ráfagas en redes</span><span class="sub">Qué se publica, cuándo y dónde</span></span>
+      </button>
+    </section>
+
+    <!-- ===================== RÁFAGAS: LISTA ===================== -->
+    <section id="pantalla-rafagas" class="oculto">
+      <p class="saludo">Cada ráfaga publica historias a una hora fija. Los lanzamientos se promocionan todos los días durante su semana; el resto nunca se repite antes de los días que elijas.</p>
+      <div class="tarjeta">
+        <div class="contador-fila">
+          <span>🔁 No repetir antes de</span>
+          <div class="stepper"><button onclick="cambiarDiasSinRepetir(-1)">−</button><output id="diasSinRepetir">4</output><button onclick="cambiarDiasSinRepetir(1)">+</button></div>
+        </div>
+        <p class="ayuda-campo">días (vale para todo menos los lanzamientos)</p>
+      </div>
+      <div id="listaRafagas"></div>
+      <button class="btn-principal btn-azul" onclick="editarRafaga(null)">➕ Nueva ráfaga</button>
+      <div class="tarjeta historial-caja">
+        <p class="paso">Últimas publicaciones</p>
+        <div id="historialRafagas" class="historial"></div>
+      </div>
+    </section>
+
+    <!-- ===================== RÁFAGAS: EDITAR ===================== -->
+    <section id="pantalla-rafaga" class="oculto">
+      <div class="tarjeta">
+        <p class="paso">Nombre</p>
+        <input type="text" id="rfNombre" placeholder="Ej: Noche" autocomplete="off">
+        <label class="interruptor"><input type="checkbox" id="rfActiva" checked> <span>Activa</span></label>
+      </div>
+
+      <div class="tarjeta">
+        <p class="paso">¿Cuándo sale?</p>
+        <div class="dos-col">
+          <label class="campo-fecha">Desde las<input type="time" id="rfHora" value="20:00" class="campo-hora"></label>
+          <label class="campo-fecha">Hasta las (opcional)<input type="time" id="rfHoraHasta" class="campo-hora"></label>
+        </div>
+        <p class="ayuda-campo">Si ponés "hasta", Adrián puede publicarla en ese rango; si se pasa la hora, la ráfaga se saltea ese día.</p>
+        <p class="mini">Días</p>
+        <div class="chips-dias" id="rfDias">
+          <button data-dia="1">L</button><button data-dia="2">M</button><button data-dia="3">M</button>
+          <button data-dia="4">J</button><button data-dia="5">V</button><button data-dia="6">S</button><button data-dia="0">D</button>
+        </div>
+        <p class="mini">Vigencia (vacío = siempre)</p>
+        <div class="dos-col">
+          <label class="campo-fecha">Desde<input type="date" id="rfDesde"></label>
+          <label class="campo-fecha">Hasta<input type="date" id="rfHasta"></label>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <p class="paso">¿Qué publica y cuántos de cada uno?</p>
+        <div class="contador-fila">
+          <span>✨ Nuevos ingresos<span class="chico-linea">Lanzamientos de la semana</span></span>
+          <div class="stepper"><button onclick="sumar('rfNuevos', -1)">−</button><output id="rfNuevos">0</output><button onclick="sumar('rfNuevos', 1)">+</button></div>
+        </div>
+        <div class="contador-fila">
+          <span>🔥 Alto interés<span class="chico-linea">Lo que más tocan y piden los clientes</span></span>
+          <div class="stepper"><button onclick="sumar('rfInteres', -1)">−</button><output id="rfInteres">0</output><button onclick="sumar('rfInteres', 1)">+</button></div>
+        </div>
+        <div class="contador-fila">
+          <span>🐢 Poca rotación<span class="chico-linea">Lo que menos se mueve</span></span>
+          <div class="stepper"><button onclick="sumar('rfPoca', -1)">−</button><output id="rfPoca">0</output><button onclick="sumar('rfPoca', 1)">+</button></div>
+        </div>
+        <div class="contador-fila">
+          <span>📚 Colecciones<span class="chico-linea">Números de colecciones</span></span>
+          <div class="stepper"><button onclick="sumar('rfColecciones', -1)">−</button><output id="rfColecciones">0</output><button onclick="sumar('rfColecciones', 1)">+</button></div>
+        </div>
+        <div class="contador-fila">
+          <span>🎲 Al azar<span class="chico-linea">Cualquier cosa del stock</span></span>
+          <div class="stepper"><button onclick="sumar('rfAzar', -1)">−</button><output id="rfAzar">0</output><button onclick="sumar('rfAzar', 1)">+</button></div>
+        </div>
+        <p class="total-rafaga" id="rfTotal"></p>
+      </div>
+
+      <div class="tarjeta">
+        <p class="paso">¿Dónde se publica?</p>
+        <div class="chips-redes" id="rfRedes">
+          <button data-red="whatsapp">💬 Estado de WhatsApp</button>
+          <button data-red="instagram">📸 Instagram</button>
+          <button data-red="facebook">👍 Facebook</button>
+          <button data-red="telegram">✈️ Telegram</button>
+        </div>
+        <p class="ayuda-campo">WhatsApp: a la hora de la ráfaga le aparece a Adrián un botón para compartirla. Las otras redes salen solas cuando estén conectadas.</p>
+        <p class="mini">¿Cuánto tiempo queda publicado?</p>
+        <select id="rfBorrar" class="select-grande" aria-label="Duración">
+          <option value="">Historias: 24 hs (lo normal)</option>
+          <option value="12">12 horas</option>
+          <option value="48">2 días (Telegram y Facebook)</option>
+          <option value="72">3 días (Telegram y Facebook)</option>
+          <option value="168">1 semana (Telegram y Facebook)</option>
+        </select>
+      </div>
+
+      <button class="btn-principal" onclick="guardarRafaga()">✅ Guardar ráfaga</button>
+      <div class="acciones acciones-rafaga">
+        <button class="accion" onclick="previsualizarRafaga()">👀 Ver qué saldría ahora</button>
+        <button class="accion peligro oculto" id="rfBorrarBtn" onclick="confirmarBorrarRafaga()">🗑️ Borrar esta ráfaga</button>
+      </div>
+    </section>
+
+    <!-- ===================== RÁFAGAS: COMPARTIR ===================== -->
+    <section id="pantalla-compartir" class="oculto">
+      <p class="saludo" id="compartirTexto"></p>
+      <div id="historiasPrevia" class="historias"></div>
+      <div class="acciones">
+        <button class="btn-principal" id="btnCompartirRafaga" onclick="compartirRafaga()">💬 Compartir en WhatsApp</button>
+        <button class="accion" onclick="marcarRafagaPublicada()">✅ Ya la publiqué</button>
+        <button class="accion" onclick="cambiarSeleccionRafaga()">🔄 Elegir otras</button>
+      </div>
+    </section>
+
+    <!-- ===================== CARGAR ===================== -->
+    <section id="pantalla-cargar" class="oculto">
+      <div class="tarjeta">
+        <p class="paso"><span class="num">1</span>Foto de la tapa</p>
+        <button class="foto-caja" id="fotoCaja" onclick="document.getElementById('inputCamara').click()">
+          <span class="grande">📷</span>
+          <span>Tocá acá para sacar la foto</span>
+        </button>
+        <div class="foto-acciones">
+          <button class="btn-sec" onclick="document.getElementById('inputCamara').click()">📷 Cámara</button>
+          <button class="btn-sec" onclick="document.getElementById('inputGaleria').click()">🖼️ De la galería</button>
+        </div>
+        <input type="file" id="inputCamara" accept="image/*" capture="environment" class="oculto" onchange="elegirFoto(this)">
+        <input type="file" id="inputGaleria" accept="image/*" class="oculto" onchange="elegirFoto(this)">
+      </div>
+
+      <div class="tarjeta">
+        <p class="paso"><span class="num">2</span>¿Qué es?</p>
+        <div class="elegir" id="elegirModo">
+          <button data-valor="suelto" class="activo" onclick="elegirModo(this)">📰 Algo suelto<span class="chico">Un diario, una revista…</span></button>
+          <button data-valor="serie" onclick="elegirModo(this)">📚 Un número<span class="chico">De una colección o revista</span></button>
+        </div>
+
+        <div id="bloqueSuelto" class="sub-bloque">
+          <input type="text" id="nuevoTitulo" placeholder="Ej: Revista Gente especial" autocomplete="off" autocapitalize="sentences">
+        </div>
+
+        <div id="bloqueSerie" class="sub-bloque oculto">
+          <p class="mini">¿De qué colección?</p>
+          <div id="listaSeries" class="lista-series"></div>
+          <div id="bloqueSerieNueva" class="oculto">
+            <input type="text" id="nombreSerieNueva" placeholder="Nombre (Ej: Billiken)" autocomplete="off" autocapitalize="words">
+            <p class="ayuda-campo">La foto de este número va a ser la portada de la colección. Después se puede cambiar.</p>
+          </div>
+          <p class="mini">¿Qué número es?</p>
+          <div class="campo-precio campo-numero">
+            <span>N°</span>
+            <input type="text" id="nuevoNumero" inputmode="numeric" placeholder="0" autocomplete="off">
+          </div>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <p class="paso"><span class="num">3</span>Precio</p>
+        <div class="campo-precio">
+          <span>$</span>
+          <input type="text" id="nuevoPrecio" inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <p class="paso"><span class="num">4</span>¿Cuántos tenés?</p>
+        <div class="contador-fila">
+          <span>Ejemplares</span>
+          <div class="stepper"><button type="button" onclick="pasoCant('nuevaCantidad', -1)">−</button><output id="nuevaCantidad" data-max="99">1</output><button type="button" onclick="pasoCant('nuevaCantidad', 1)">+</button></div>
+        </div>
+      </div>
+
+      <div class="tarjeta" id="tarjetaCategoria">
+        <p class="paso"><span class="num">5</span>¿Qué tipo?</p>
+        <div class="elegir" id="elegirCategoria">
+          <button data-valor="Diarios" onclick="elegirCategoria(this)">🗞️ Diario</button>
+          <button data-valor="Revistas" onclick="elegirCategoria(this)" class="activo">📰 Revista</button>
+          <button data-valor="Colecciones" onclick="elegirCategoria(this)">📚 Colección</button>
+          <button data-valor="Otros" onclick="elegirCategoria(this)">📦 Otro</button>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <p class="paso"><span class="num" id="numPasoTipo">6</span>¿Llegó hoy o es de antes?</p>
+        <div class="elegir" id="elegirTipo">
+          <button data-valor="nuevo" onclick="elegirTipo(this)" class="activo">✨ Llegó nuevo<span class="chico">Novedad por 7 días</span></button>
+          <button data-valor="stock" onclick="elegirTipo(this)">📦 Es de antes<span class="chico">Va al archivo</span></button>
+        </div>
+      </div>
+
+      <button class="btn-principal" id="btnGuardar" onclick="guardarProducto()">✅ GUARDAR</button>
+    </section>
+
+    <!-- ===================== STOCK ===================== -->
+    <section id="pantalla-stock" class="oculto">
+      <div class="pestanas">
+        <button data-filtro="todo" class="activo" onclick="elegirFiltro(this)">Todo</button>
+        <button data-filtro="novedad" onclick="elegirFiltro(this)">✨ Nuevos</button>
+        <button data-filtro="archivo" onclick="elegirFiltro(this)">📦 Archivo</button>
+        <button data-filtro="agotado" onclick="elegirFiltro(this)">🚫 Sin stock</button>
+      </div>
+      <input type="search" id="buscador" class="buscador" placeholder="🔎 Buscar por nombre" oninput="dibujarStock()">
+      <div class="fila-contador">
+        <p class="contador" id="contador"></p>
+        <button class="btn-chico" id="btnElegirVarios" onclick="entrarSeleccion()">☑️ Elegir varios</button>
+      </div>
+      <div id="listaStock"></div>
+    </section>
+
+    <!-- ===================== RESERVAS ===================== -->
+    <section id="pantalla-reservas" class="oculto">
+      <div class="pestanas pestanas-3" id="tabsReservas">
+        <button data-tab="pendiente" onclick="elegirTabReservas(this)">🔔 Por confirmar</button>
+        <button data-tab="activa" class="activo" onclick="elegirTabReservas(this)">📌 Activas</button>
+        <button data-tab="cerrada" onclick="elegirTabReservas(this)">📒 Historial</button>
+      </div>
+      <input type="search" id="buscadorReservas" class="buscador" placeholder="🔎 Buscar por nombre o revista" oninput="dibujarReservas()">
+      <div id="listaReservas"></div>
+      <button class="btn-principal btn-azul" onclick="elegirProductoParaReserva()">➕ Nueva reserva</button>
+    </section>
+
+    <!-- ===================== MOVIMIENTOS (ventas y bajas) ===================== -->
+    <section id="pantalla-movimientos" class="oculto">
+      <div class="resumen-mov" id="resumenMov"></div>
+      <div class="chips" id="filtrosMov">
+        <button class="chip activo" data-f="todo" onclick="elegirFiltroMov(this)">Todo</button>
+        <button class="chip" data-f="venta" onclick="elegirFiltroMov(this)">🛒 Ventas</button>
+        <button class="chip" data-f="ajuste" onclick="elegirFiltroMov(this)">➖ Bajas</button>
+        <button class="chip" data-f="ingreso" onclick="elegirFiltroMov(this)">➕ Ingresos</button>
+      </div>
+      <div id="listaMov"></div>
+    </section>
+
+    <!-- ===================== MOTIVOS DE BAJA ===================== -->
+    <section id="pantalla-motivos" class="oculto">
+      <p class="saludo">Son las razones para dar de baja algo que no se vendió. Aparecen como botones al dar de baja.</p>
+      <div id="listaMotivos"></div>
+      <div class="tarjeta">
+        <p class="paso">Agregar un motivo</p>
+        <input type="text" id="nuevoMotivo" placeholder="Ej: Se mojó" autocomplete="off">
+        <button class="btn-principal btn-azul espacio-arriba" onclick="agregarMotivo()">➕ Agregar</button>
+      </div>
+    </section>
+
+    <!-- ===================== CATÁLOGO PÚBLICO (para clientes) ===================== -->
+    <section id="pantalla-catalogo" class="oculto">
+      <p class="cat-intro">Tocá una tapa para verla grande, o <b>Reservar</b> y el puesto te confirma por WhatsApp.</p>
+      <input type="search" id="buscadorCatalogo" class="buscador" placeholder="🔎 Buscar por nombre" oninput="dibujarCatalogo()">
+      <div id="vistaSerie" class="oculto"></div>
+      <div class="chips" id="filtrosCliente"></div>
+      <div class="barra-orden" id="barraOrden">
+        <span id="contadorCatalogo"></span>
+        <label>Ordenar:
+          <select id="ordenCliente" onchange="elegirOrdenCliente(this)">
+            <option value="nuevos">Más nuevos</option>
+            <option value="barato">Menor precio</option>
+            <option value="caro">Mayor precio</option>
+            <option value="nombre">Por nombre (A-Z)</option>
+          </select>
+        </label>
+      </div>
+      <div id="catalogo"></div>
+      <p class="cat-pie" id="catPie"></p>
+    </section>
+
+  </main>
+
+  <!-- Hoja de acciones de un producto -->
+  <!-- Barra de selección múltiple -->
+  <div id="barraSeleccion" class="barra-seleccion oculto">
+    <div class="fila-sel">
+      <button onclick="seleccionarTodos()">Todos</button>
+      <button onclick="seleccionarNinguno()">Ninguno</button>
+      <span id="cantElegidos">0 elegidos</span>
+      <button class="cerrar-sel" onclick="salirSeleccion()" aria-label="Salir">✖</button>
+    </div>
+    <div class="fila-sel acciones-sel">
+      <button onclick="accionMasiva('nuevo')">✨ A nuevo</button>
+      <button onclick="accionMasiva('stock')">📦 A archivo</button>
+      <button class="peligro" onclick="accionMasiva('borrar')">🗑️ Borrar</button>
+    </div>
+  </div>
+
+  <div id="hoja" class="fondo-oscuro oculto" onclick="if (event.target === this) cerrarHoja()">
+    <div class="hoja" id="hojaContenido"></div>
+  </div>
+
+  <!-- Cargando -->
+  <div id="cargando" class="cargando oculto">
+    <div class="rueda"></div>
+    <span id="cargandoTexto">Guardando…</span>
+  </div>
+
+  <!-- Aviso grande -->
+  <div id="aviso" class="escondido"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
