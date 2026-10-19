@@ -3,7 +3,8 @@
 //  Busca en internet tapas y una descripción breve de una publicación,
 //  y trae la foto elegida para que la app la achique y la guarde.
 //  Solo la puede usar la cuenta del puesto (cuenta autorizada).
-//  Necesita el secreto BRAVE_API_KEY (Brave Search API, plan gratis).
+//  Necesita el secreto SERPAPI_KEY (SerpApi, plan gratis sin tarjeta)
+//  o, como alternativa, BRAVE_API_KEY.
 // =====================================================================
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -108,29 +109,72 @@ Deno.serve(async (req) => {
   }
 
   // 3) Buscar tapas y descripciones
-  const clave = Deno.env.get("BRAVE_API_KEY");
-  if (!clave) return json({ error: "FALTA_CLAVE_BUSQUEDA" }, 500);
+  //    Usa SerpApi (plan gratis, sin tarjeta) si está SERPAPI_KEY; si no, Brave (BRAVE_API_KEY).
   const q = String(body.q || "").trim().slice(0, 150);
   if (q.length < 2) return json({ error: "FALTA_TITULO" }, 400);
+  const claveSerp = Deno.env.get("SERPAPI_KEY");
+  const claveBrave = Deno.env.get("BRAVE_API_KEY");
+  if (!claveSerp && !claveBrave) return json({ error: "FALTA_CLAVE_BUSQUEDA" }, 500);
 
-  const cabeceras = { "Accept": "application/json", "X-Subscription-Token": clave };
-  const pedirImagenes = fetch(
-    "https://api.search.brave.com/res/v1/images/search?" +
-      new URLSearchParams({ q: q + " tapa", country: "AR", search_lang: "es", count: "16", safesearch: "strict" }),
-    { headers: cabeceras, signal: AbortSignal.timeout(12000) },
-  ).then((r) => (r.ok ? r.json() : { results: [] })).catch(() => ({ results: [] }));
+  // deno-lint-ignore no-explicit-any
+  let crudasImg: any[] = [];
+  // deno-lint-ignore no-explicit-any
+  let crudasWeb: any[] = [];
 
-  const pedirWeb = fetch(
-    "https://api.search.brave.com/res/v1/web/search?" +
-      new URLSearchParams({ q, country: "AR", search_lang: "es", count: "10", safesearch: "moderate" }),
-    { headers: cabeceras, signal: AbortSignal.timeout(12000) },
-  ).then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
-
-  const [img, web] = await Promise.all([pedirImagenes, pedirWeb]);
+  if (claveSerp) {
+    // Una sola búsqueda de Google trae descripciones y algunas fotos;
+    // solo si trae pocas fotos se hace una segunda búsqueda de imágenes (cuida el cupo gratis).
+    const base = { api_key: claveSerp, gl: "ar", hl: "es", google_domain: "google.com.ar" };
+    const pedir = (p: Record<string, string>) =>
+      fetch("https://serpapi.com/search.json?" + new URLSearchParams({ ...base, ...p }), { signal: AbortSignal.timeout(15000) })
+        .then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+    // deno-lint-ignore no-explicit-any
+    const g: any = await pedir({ engine: "google", q, num: "10" });
+    crudasWeb = (g.organic_results || []).map((r: { snippet?: string; displayed_link?: string; link?: string }) => ({
+      description: r.snippet || "",
+      meta_url: { hostname: (() => { try { return new URL(r.link || "").hostname; } catch { return r.displayed_link || ""; } })() },
+    }));
+    // deno-lint-ignore no-explicit-any
+    const enLinea = (g.inline_images || []).map((im: any) => ({
+      properties: { url: im.original || "", width: im.original_width, height: im.original_height },
+      thumbnail: { src: im.thumbnail || "" },
+      meta_url: { hostname: im.source_name || im.source || "" },
+      title: im.title || "",
+    })).filter((x: { properties: { url: string } }) => x.properties.url);
+    crudasImg = enLinea;
+    if (enLinea.length < 6) {
+      // deno-lint-ignore no-explicit-any
+      const gi: any = await pedir({ engine: "google_images", q: q + " tapa" });
+      // deno-lint-ignore no-explicit-any
+      crudasImg = enLinea.concat((gi.images_results || []).slice(0, 16).map((im: any) => ({
+        properties: { url: im.original || "", width: im.original_width, height: im.original_height },
+        thumbnail: { src: im.thumbnail || "" },
+        meta_url: { hostname: (() => { try { return new URL(im.link || "").hostname; } catch { return im.source || ""; } })() },
+        title: im.title || "",
+      })));
+    }
+  } else {
+    const cabeceras = { "Accept": "application/json", "X-Subscription-Token": claveBrave! };
+    const [img, web] = await Promise.all([
+      fetch(
+        "https://api.search.brave.com/res/v1/images/search?" +
+          new URLSearchParams({ q: q + " tapa", country: "AR", search_lang: "es", count: "16", safesearch: "strict" }),
+        { headers: cabeceras, signal: AbortSignal.timeout(12000) },
+      ).then((r) => (r.ok ? r.json() : { results: [] })).catch(() => ({ results: [] })),
+      fetch(
+        "https://api.search.brave.com/res/v1/web/search?" +
+          new URLSearchParams({ q, country: "AR", search_lang: "es", count: "10", safesearch: "moderate" }),
+        { headers: cabeceras, signal: AbortSignal.timeout(12000) },
+      ).then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+    ]);
+    // deno-lint-ignore no-explicit-any
+    crudasImg = (img as any).results || [];
+    // deno-lint-ignore no-explicit-any
+    crudasWeb = ((web as any).web || {}).results || [];
+  }
 
   // Imágenes: preferimos tapas verticales y de buen tamaño
-  // deno-lint-ignore no-explicit-any
-  const imagenes = ((img as any).results || [])
+  const imagenes = crudasImg
     // deno-lint-ignore no-explicit-any
     .map((r: any) => ({
       url: r?.properties?.url || "",
@@ -160,7 +204,7 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   const vistos = new Set<string>();
   // deno-lint-ignore no-explicit-any
-  const descripciones = (((web as any).web || {}).results || [])
+  const descripciones = crudasWeb
     // deno-lint-ignore no-explicit-any
     .map((r: any) => {
       const host = r?.meta_url?.hostname || "";
