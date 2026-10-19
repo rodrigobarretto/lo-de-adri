@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '15';                // subir junto con VERSION de sw.js
+const VERSION_APP = '16';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -209,14 +209,15 @@ const TITULOS = {
   reservas: '📌 Reservas',
   movimientos: '📒 Ventas y bajas',
   motivos: '🏷️ Motivos de baja',
-  redes: '📱 Redes del puesto'
+  redes: '📱 Redes del puesto',
+  colecciones: '📚 Colecciones'
 };
 
 // Pantalla "madre" de cada una: adonde lleva el botón Volver
 const PADRE = {
   cargar: 'inicio', stock: 'inicio', ajustes: 'inicio', compartir: 'inicio',
   rafagas: 'ajustes', rafaga: 'rafagas',
-  reservas: 'inicio', movimientos: 'ajustes', motivos: 'ajustes', redes: 'ajustes'
+  reservas: 'inicio', movimientos: 'ajustes', motivos: 'ajustes', redes: 'ajustes', colecciones: 'ajustes'
 };
 
 function volver() {
@@ -275,6 +276,7 @@ function irA(pantalla, agregarHistorial = true) {
   if (pantalla === 'movimientos') cargarMovimientos();
   if (pantalla === 'motivos') cargarMotivos();
   if (pantalla === 'redes') dibujarRedes();
+  if (pantalla === 'colecciones') cargarColecciones();
 }
 
 let ignorarProximoAtras = false;   // cuando la app misma retrocede para cerrar una hoja
@@ -361,7 +363,9 @@ function dibujarListaSeries() {
       </button>`;
   }).join('');
   const nueva = `<button class="serie-opcion nueva ${estado.serieElegida === 'nueva' ? 'activo' : ''}" onclick="elegirSerie('nueva')">➕ Es una colección nueva</button>`;
-  $('listaSeries').innerHTML = botones + nueva;
+  const elegida = estado.serieElegida && estado.serieElegida !== 'nueva' && serieDe(estado.serieElegida);
+  const cambiar = elegida ? `<button class="accion chico-accion" onclick="pantallaPortadaSerie(${Number(elegida.id)})">🖼️ Cambiar la portada de «${escapar(elegida.nombre)}»</button>` : '';
+  $('listaSeries').innerHTML = botones + nueva + cambiar;
   $('bloqueSerieNueva').classList.toggle('oculto', estado.serieElegida !== 'nueva');
 }
 
@@ -477,6 +481,11 @@ function moverPuntos(gid) {
   if (!g || !pts) return;
   const i = Math.round(g.scrollLeft / Math.max(1, g.clientWidth));
   Array.from(pts.children).forEach((s, j) => s.classList.toggle('activo', j === i));
+}
+
+// Una foto que es portada de alguna colección no se borra del almacenamiento
+function esPortadaDeSerie(url) {
+  return !!url && estado.series.some(s => s.portada_url === url);
 }
 
 function rutaDeFoto(url) {
@@ -805,6 +814,8 @@ async function abrirBusqueda(q, destino) {
 
 function dibujarBusqueda(q) {
   const r = busqueda.resultados || { imagenes: [], descripciones: [] };
+  const paraSerie = busqueda.destino && busqueda.destino.tipo === 'serie';
+  if (paraSerie) r.descripciones = [];
   if (!busqueda.desc && r.descripciones.length) busqueda.desc = 0;
   const fotos = r.imagenes.map((im, i) => `
       <button class="${busqueda.fotos.includes(i) ? 'activo' : ''}" ${busqueda.fotos.includes(i) ? `data-orden="${busqueda.fotos.indexOf(i) + 1}"` : ''} onclick="elegirFotoBuscada(${i})" aria-label="Foto ${i + 1} de ${escapar(im.fuente)}">
@@ -818,19 +829,20 @@ function dibujarBusqueda(q) {
   mostrarHoja(`
     <h3>Elegí las fotos</h3>
     <p class="info">${escapar(q)}</p>
-    <p class="ayuda-campo">Tocá hasta ${MAX_FOTOS}. La 1 es la portada; las otras se ven al deslizar.</p>
+    <p class="ayuda-campo">${paraSerie ? 'Tocá la foto que quieras de portada de la colección.' : `Tocá hasta ${MAX_FOTOS}. La 1 es la portada; las otras se ven al deslizar.`}</p>
     ${fotos ? `<div class="resultados-fotos">${fotos}</div>` : '<p class="vacio">No encontré fotos. Probá sacándole una foto.</p>'}
     ${descs ? `<p class="mini">Descripción (tocá la que mejor la describe)</p><div class="opciones-desc">${descs}
       <button class="${busqueda.desc === -1 ? 'activo' : ''}" onclick="elegirDescBuscada(-1)">Sin descripción</button></div>` : ''}
     <div class="acciones">
       <button class="btn-principal" onclick="usarBusqueda()" ${!busqueda.fotos.length && (busqueda.desc === null || busqueda.desc < 0) ? 'disabled' : ''}>✅ Usar esto</button>
-      <button class="accion cerrar" onclick="cerrarHoja()">Cancelar</button>
+      <button class="accion cerrar" onclick="${paraSerie ? `pantallaPortadaSerie(${Number(busqueda.destino.sid)}, ${busqueda.destino.pid ? Number(busqueda.destino.pid) : 'null'})` : 'cerrarHoja()'}">Cancelar</button>
     </div>`);
 }
 
 function elegirFotoBuscada(i) {
   const k = busqueda.fotos.indexOf(i);
-  if (k >= 0) busqueda.fotos.splice(k, 1);
+  if (busqueda.destino && busqueda.destino.tipo === 'serie') busqueda.fotos = k >= 0 ? [] : [i];
+  else if (k >= 0) busqueda.fotos.splice(k, 1);
   else if (busqueda.fotos.length < MAX_FOTOS) busqueda.fotos.push(i);
   else { avisar(`Podés elegir hasta ${MAX_FOTOS} fotos`, 'info'); return; }
   const scroll = $('hoja').scrollTop;
@@ -871,7 +883,11 @@ async function usarBusqueda() {
     if (busqueda.fotos.length && !blobs.length) throw new Error('NO_SE_PUDO_DESCARGAR');
     const avisoParcial = blobs.length < busqueda.fotos.length ? ` (${busqueda.fotos.length - blobs.length} no se pudo traer)` : '';
 
-    if (busqueda.destino.tipo === 'carga') {
+    if (busqueda.destino.tipo === 'serie') {
+      const url = await subirFoto(blobs[0]);
+      ocultarCargando();
+      await guardarPortadaSerie(busqueda.destino.sid, url, busqueda.destino.pid, '🖼️ Portada cambiada' + avisoParcial);
+    } else if (busqueda.destino.tipo === 'carga') {
       if (blobs.length) {
         estado.fotoArchivo = blobs[0];
         if (estado.fotoPreviewUrl) URL.revokeObjectURL(estado.fotoPreviewUrl);
@@ -902,7 +918,7 @@ async function usarBusqueda() {
       if (error) throw error;
       // Las fotos nuevas reemplazan a las anteriores: se borran para no llenar el espacio
       if (blobs.length && viejo) {
-        const rutas = fotosDe(viejo).map(rutaDeFoto).filter(Boolean);
+        const rutas = fotosDe(viejo).filter(u => !esPortadaDeSerie(u)).map(rutaDeFoto).filter(Boolean);
         if (rutas.length) db.storage.from(BUCKET).remove(rutas).catch(() => {});
       }
       ocultarCargando();
@@ -953,7 +969,7 @@ async function guardarFotos(pid, lista, mensaje, borrar) {
   if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return false; }
   const p = productoPorId(pid);
   if (p) { p.imagen_url = lista[0] || ''; p.fotos_extra = lista.slice(1); }
-  if (borrar) { const r = rutaDeFoto(borrar); if (r) db.storage.from(BUCKET).remove([r]).catch(() => {}); }
+  if (borrar && !esPortadaDeSerie(borrar)) { const r = rutaDeFoto(borrar); if (r) db.storage.from(BUCKET).remove([r]).catch(() => {}); }
   avisar(mensaje);
   pantallaFotos(pid);
   return true;
@@ -1238,7 +1254,7 @@ function dibujarHoja(id) {
       ${disp ? `<button class="accion wa" onclick="compartirProducto(${pid})">📲 Mandar esta por WhatsApp</button>` : ''}
       ${p.serie_id && serieDe(p.serie_id) ? `
         <button class="accion wa" onclick="compartirSerie(${Number(p.serie_id)})">📚 Mandar toda la colección</button>
-        ${p.imagen_url ? `<button class="accion" onclick="usarComoPortada(${pid})">🖼️ Usar esta foto de portada de la colección</button>` : ''}` : ''}
+        <button class="accion" onclick="pantallaPortadaSerie(${Number(p.serie_id)}, ${pid})">🖼️ Cambiar la portada de la colección</button>` : ''}
       <button class="accion peligro" onclick="pantallaBorrar(${pid})">🗑️ Borrar del todo</button>
       <button class="accion cerrar" onclick="cerrarHoja()">Cerrar</button>
     </div>
@@ -1388,15 +1404,14 @@ async function guardarEdicion(pid) {
 function pantallaNombreSerie(sid, pid) {
   const serie = serieDe(sid);
   const cant = numerosDeSerie(sid).length;
-  $('hojaContenido').innerHTML = `
+  mostrarHoja(`
     <h3>📚 Nombre de la colección</h3>
     <p class="info">Cambia en los ${cant} número${cant === 1 ? '' : 's'} cargado${cant === 1 ? '' : 's'}.</p>
     <input type="text" id="serieEditada" value="${escapar(serie.nombre)}" autocomplete="off" autocapitalize="words" style="margin-bottom:14px">
     <div class="acciones">
       <button class="btn-principal" onclick="guardarNombreSerie(${Number(sid)})">✅ Guardar</button>
-      <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Cancelar</button>
-    </div>`;
-  $('hoja').scrollTop = 0;
+      <button class="accion cerrar" onclick="${pid ? `dibujarHoja(${Number(pid)})` : 'cerrarHoja()'}">Cancelar</button>
+    </div>`);
   setTimeout(() => { $('serieEditada').focus(); $('serieEditada').select(); }, 150);
 }
 
@@ -1447,17 +1462,122 @@ async function actualizarProducto(id, cambios, mensajeOk) {
   refrescar();
 }
 
-async function usarComoPortada(id) {
-  const p = productoPorId(id);
-  if (!p || !p.serie_id) return;
+// =====================================================================
+//  PORTADA DE UNA COLECCIÓN
+//  Se puede elegir una foto de sus números, sacar/subir una nueva,
+//  buscarla en internet o dejar la automática (la del primer número).
+// =====================================================================
+
+let portadaSid = null, portadaPid = null;
+
+function pantallaPortadaSerie(sid, pid) {
+  const serie = serieDe(sid);
+  if (!serie) return;
+  portadaSid = Number(sid);
+  portadaPid = pid ? Number(pid) : null;
+  const actual = portadaDeSerie(serie);
+  const fotos = [];
+  for (const p of numerosDeSerie(sid).slice().sort(compararNumero)) {
+    for (const u of fotosDe(p)) if (!fotos.some(f => f.url === u)) fotos.push({ url: u, num: p.numero });
+  }
+  const opciones = fotos.map((f, i) => `
+      <button class="${f.url === actual ? 'activo' : ''}" onclick="elegirPortadaDeNumero(${i})" aria-label="Foto ${i + 1}">
+        <img src="${escapar(f.url)}" alt="" loading="lazy">
+        ${f.num ? `<span class="fuente">N° ${escapar(String(f.num))}</span>` : ''}
+      </button>`).join('');
+  portadaFotos = fotos.map(f => f.url);
+  mostrarHoja(`
+    <h3>🖼️ Portada de la colección</h3>
+    <p class="info">${escapar(serie.nombre)}</p>
+    <div class="portada-actual">
+      ${actual ? `<img src="${escapar(actual)}" alt="Portada actual">` : '<span class="sin-foto">📚</span>'}
+      <span class="chico">${serie.portada_url ? 'Portada elegida' : 'Automática: la foto del primer número'}</span>
+    </div>
+    <div class="acciones">
+      <button class="btn-principal btn-azul" onclick="document.getElementById('inputPortadaSerie').click()">📷 Sacar o elegir otra foto</button>
+      <button class="accion" onclick="buscarPortadaSerie()">🔎 Buscar en internet</button>
+    </div>
+    ${opciones ? `<p class="mini">O tocá una foto de sus números</p><div class="resultados-fotos">${opciones}</div>` : ''}
+    <div class="acciones">
+      ${serie.portada_url ? `<button class="accion" onclick="guardarPortadaSerie(${portadaSid}, '', portadaPid, '↩️ Portada automática')">↩️ Usar la del primer número (automática)</button>` : ''}
+      <button class="accion cerrar" onclick="${portadaPid ? `dibujarHoja(${portadaPid})` : 'cerrarHoja()'}">Listo</button>
+    </div>`);
+}
+
+let portadaFotos = [];
+
+function elegirPortadaDeNumero(i) {
+  const url = portadaFotos[i];
+  if (url) guardarPortadaSerie(portadaSid, url, portadaPid, '🖼️ Portada cambiada');
+}
+
+function buscarPortadaSerie() {
+  const serie = serieDe(portadaSid);
+  if (!serie) return;
+  abrirBusqueda([serie.nombre, serie.editorial, 'colección'].filter(Boolean).join(' '),
+    { tipo: 'serie', sid: portadaSid, pid: portadaPid });
+}
+
+async function subirPortadaSerie(input) {
+  const archivo = input.files && input.files[0];
+  input.value = '';
+  if (!archivo || !portadaSid) return;
+  mostrarCargando('Subiendo la foto…');
+  try {
+    const url = await subirFoto(archivo);
+    ocultarCargando();
+    await guardarPortadaSerie(portadaSid, url, portadaPid, '🖼️ Portada cambiada');
+  } catch (err) {
+    console.error(err);
+    ocultarCargando();
+    avisar('❌ ' + mensajeError(err), 'mal', 5000);
+  }
+}
+
+async function guardarPortadaSerie(sid, url, pid, mensaje) {
+  const serie = serieDe(sid);
+  if (!serie) return;
+  const anterior = serie.portada_url || '';
   mostrarCargando('Guardando…');
-  const { error } = await db.from('series').update({ portada_url: p.imagen_url }).eq('id', p.serie_id);
+  const { error } = await db.from('series').update({ portada_url: url || '' }).eq('id', sid);
   ocultarCargando();
   if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return; }
-  const serie = serieDe(p.serie_id);
-  if (serie) serie.portada_url = p.imagen_url;
-  cerrarHoja();
-  avisar('🖼️ Portada cambiada');
+  serie.portada_url = url || '';
+  // Si la portada vieja era una foto suelta (no es de ningún número), se borra
+  if (anterior && anterior !== url && !estado.productos.some(p => fotosDe(p).includes(anterior)) && !esPortadaDeSerie(anterior)) {
+    const r = rutaDeFoto(anterior);
+    if (r) db.storage.from(BUCKET).remove([r]).catch(() => {});
+  }
+  avisar(mensaje);
+  pantallaPortadaSerie(sid, pid);
+  refrescar();
+}
+
+// ---------- Pantalla Colecciones (en Ajustes) ----------
+
+async function cargarColecciones() {
+  $('listaColecciones').innerHTML = '<p class="vacio">Cargando…</p>';
+  try { await traerProductos(); } catch (e) { /* sin conexión */ }
+  dibujarColecciones();
+}
+
+function dibujarColecciones() {
+  const caja = $('listaColecciones');
+  if (!caja) return;
+  caja.innerHTML = estado.series.length ? estado.series.map(serie => {
+    const portada = portadaDeSerie(serie);
+    const cant = numerosDeSerie(serie.id).length;
+    return `
+      <div class="fila-foto">
+        ${portada ? `<img src="${escapar(portada)}" alt="">` : '<span class="sin-foto-fila">📚</span>'}
+        <div class="botones">
+          <b>${escapar(serie.nombre)}</b>
+          <span class="chico">${cant} número${cant === 1 ? '' : 's'}</span>
+          <button onclick="pantallaPortadaSerie(${Number(serie.id)})">🖼️ Cambiar portada</button>
+          <button onclick="pantallaNombreSerie(${Number(serie.id)})">✏️ Cambiar nombre</button>
+        </div>
+      </div>`;
+  }).join('') : '<p class="vacio">Todavía no hay colecciones. Se crean al cargar un número de una colección.</p>';
 }
 
 function pantallaBorrar(id) {
@@ -1515,6 +1635,8 @@ function refrescar() {
   if (estado.pantalla === 'stock') cargarStock();
   else if (estado.pantalla === 'reservas') cargarReservas();
   else if (estado.pantalla === 'inicio') actualizarResumen();
+  else if (estado.pantalla === 'colecciones') dibujarColecciones();
+  else if (estado.pantalla === 'cargar') actualizarFormularioModo();
 }
 
 function mostrarHoja(html) {

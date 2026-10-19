@@ -686,6 +686,12 @@
     .producto .sello-fotos { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: .75rem; font-weight: 800; padding: 3px 8px; border-radius: 999px; z-index: 1; }
     .resultados-fotos button[data-orden]::after { content: attr(data-orden); }
     .lista-fotos { display: grid; gap: 10px; margin-bottom: 12px; }
+    .portada-actual { display: grid; justify-items: center; gap: 6px; margin: 4px 0 14px; }
+    .hoja .portada-actual img, .portada-actual img { width: 150px; height: 200px; object-fit: cover; border-radius: 14px; margin: 0; border: 3px solid var(--borde); }
+    .portada-actual .sin-foto { width: 150px; height: 200px; display: grid; place-items: center; font-size: 3rem; background: var(--gris); border-radius: 14px; }
+    .portada-actual .chico, .fila-foto .chico { color: var(--suave); font-size: .85rem; font-weight: 700; }
+    .sin-foto-fila { width: 72px; height: 96px; display: grid; place-items: center; font-size: 2rem; background: var(--gris); border-radius: 10px; flex-shrink: 0; }
+    .lista-series .chico-accion { grid-column: 1 / -1; font-size: .95rem; }
     .hoja .galeria img { margin: 0; max-height: 52vh; }
     .hoja .fila-foto img { width: 72px; height: 96px; margin: 0; object-fit: cover; }
     .fila-foto { display: flex; gap: 12px; align-items: center; background: var(--tarjeta); border: 2px solid var(--borde); border-radius: 16px; padding: 8px; }
@@ -788,6 +794,10 @@
       <button class="opcion ajuste-extra" onclick="irA('redes')">
         <span class="icono">📱</span>
         <span><span class="tit">Redes del puesto</span><span class="sub">Cuentas de Instagram, Facebook, Telegram… y cómo crearlas</span></span>
+      </button>
+      <button class="opcion ajuste-extra" onclick="irA('colecciones')">
+        <span class="icono">📚</span>
+        <span><span class="tit">Colecciones</span><span class="sub">Cambiar la portada o el nombre de cada colección</span></span>
       </button>
       <button class="opcion ajuste-extra" onclick="irA('motivos')">
         <span class="icono">🏷️</span>
@@ -1049,6 +1059,12 @@
       <button class="btn-principal btn-azul" onclick="guardarRedes()">✅ Guardar redes</button>
     </section>
 
+    <!-- ===================== COLECCIONES ===================== -->
+    <section id="pantalla-colecciones" class="oculto">
+      <p class="saludo">La portada es la foto que ve el cliente en el catálogo antes de entrar a la colección.</p>
+      <div id="listaColecciones" class="lista-fotos"></div>
+    </section>
+
     <!-- ===================== MOTIVOS DE BAJA ===================== -->
     <section id="pantalla-motivos" class="oculto">
       <p class="saludo">Son las razones para dar de baja algo que no se vendió. Aparecen como botones al dar de baja.</p>
@@ -1100,6 +1116,7 @@
     </div>
   </div>
 
+  <input type="file" id="inputPortadaSerie" accept="image/*" class="oculto" onchange="subirPortadaSerie(this)">
   <input type="file" id="inputFotoProducto" accept="image/*" class="oculto" onchange="agregarFotoProducto(this)">
   <div id="hoja" class="fondo-oscuro oculto" onclick="if (event.target === this) cerrarHoja()">
     <div class="hoja" id="hojaContenido"></div>
