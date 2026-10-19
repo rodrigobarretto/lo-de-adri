@@ -376,3 +376,6 @@ create policy "titulos: autorizados ven" on public.titulos for select to authent
 create policy "titulos: autorizados crean" on public.titulos for insert to authenticated with check (public.es_autorizado());
 create policy "titulos: autorizados cambian" on public.titulos for update to authenticated using (public.es_autorizado()) with check (public.es_autorizado());
 create policy "titulos: autorizados borran" on public.titulos for delete to authenticated using (public.es_autorizado());
+
+-- ---------- Agregado: redes del puesto ----------
+alter table public.ajustes add column if not exists redes jsonb not null default '{}'::jsonb;

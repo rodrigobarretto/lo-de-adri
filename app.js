@@ -14,6 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
+const VERSION_APP = '11';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -52,6 +53,7 @@ const estado = {
   pantalla: null,
   nombre: leerAjusteLocal('nombre') || NOMBRE_POR_DEFECTO,
   whatsapp: leerAjusteLocal('whatsapp') || WHATSAPP_POR_DEFECTO,
+  redes: {},
   diasSinRepetir: Number(leerAjusteLocal('dias_sin_repetir')) || 4,  // stock: no repetir antes de N días
   reservas: [],
   titulosExtra: [],      // títulos que se fueron agregando (tabla "titulos")
@@ -205,14 +207,15 @@ const TITULOS = {
   compartir: '📣 Ráfaga lista',
   reservas: '📌 Reservas',
   movimientos: '📒 Ventas y bajas',
-  motivos: '🏷️ Motivos de baja'
+  motivos: '🏷️ Motivos de baja',
+  redes: '📱 Redes del puesto'
 };
 
 // Pantalla "madre" de cada una: adonde lleva el botón Volver
 const PADRE = {
   cargar: 'inicio', stock: 'inicio', ajustes: 'inicio', compartir: 'inicio',
   rafagas: 'ajustes', rafaga: 'rafagas',
-  reservas: 'inicio', movimientos: 'ajustes', motivos: 'ajustes'
+  reservas: 'inicio', movimientos: 'ajustes', motivos: 'ajustes', redes: 'ajustes'
 };
 
 function volver() {
@@ -238,6 +241,7 @@ async function cargarAjustes() {
     if (error || !data) return;
     if (data.nombre) { estado.nombre = data.nombre; guardarAjusteLocal('nombre', data.nombre); }
     if (data.whatsapp) { estado.whatsapp = data.whatsapp; guardarAjusteLocal('whatsapp', data.whatsapp); }
+    if (data.redes) { estado.redes = data.redes; dibujarRedesCatalogo(); }
     if (data.dias_sin_repetir) { estado.diasSinRepetir = Number(data.dias_sin_repetir); guardarAjusteLocal('dias_sin_repetir', data.dias_sin_repetir); }
     aplicarNombre();
   } catch (e) {
@@ -269,6 +273,7 @@ function irA(pantalla, agregarHistorial = true) {
   if (pantalla === 'reservas') cargarReservas();
   if (pantalla === 'movimientos') cargarMovimientos();
   if (pantalla === 'motivos') cargarMotivos();
+  if (pantalla === 'redes') dibujarRedes();
 }
 
 let ignorarProximoAtras = false;   // cuando la app misma retrocede para cerrar una hoja
@@ -2427,6 +2432,183 @@ async function borrarRafaga() {
 }
 
 // =====================================================================
+//  REDES DEL PUESTO (cuentas y tutorial para crearlas)
+// =====================================================================
+
+const REDES = [
+  {
+    id: 'whatsapp', icono: '💬', nombre: 'WhatsApp',
+    campo: null,
+    ayuda: 'No hace falta cargar nada: las ráfagas se comparten desde el teléfono de Adrián a su estado, y los pedidos llegan al número de Ajustes.',
+    automatica: false
+  },
+  {
+    id: 'instagram', icono: '📸', nombre: 'Instagram',
+    campo: 'Usuario', ejemplo: '@lodeadri',
+    ayuda: 'El usuario de la cuenta del puesto, con @.',
+    url: v => 'https://instagram.com/' + v.replace(/^@/, ''),
+    automatica: true
+  },
+  {
+    id: 'facebook', icono: '👍', nombre: 'Facebook',
+    campo: 'Página', ejemplo: 'facebook.com/lodeadri',
+    ayuda: 'El enlace de la página del puesto (no tu perfil personal).',
+    url: v => /^https?:\/\//.test(v) ? v : 'https://' + v.replace(/^\/+/, ''),
+    automatica: true
+  },
+  {
+    id: 'telegram', icono: '✈️', nombre: 'Telegram',
+    campo: 'Canal', ejemplo: '@lodeadri',
+    ayuda: 'El canal público del puesto, con @.',
+    url: v => 'https://t.me/' + v.replace(/^@/, '').replace(/^https?:\/\/t\.me\//, ''),
+    automatica: true
+  },
+  {
+    id: 'tiktok', icono: '🎵', nombre: 'TikTok',
+    campo: 'Usuario', ejemplo: '@lodeadri',
+    ayuda: 'Solo se muestra en el catálogo. TikTok no deja publicar historias automáticas.',
+    url: v => 'https://www.tiktok.com/@' + v.replace(/^@/, ''),
+    automatica: false
+  }
+];
+
+const TUTORIALES = {
+  whatsapp: {
+    titulo: '💬 WhatsApp del puesto',
+    pasos: [
+      'No hace falta crear nada nuevo: se usa el WhatsApp del teléfono de Adrián.',
+      'Recomendado: instalar <b>WhatsApp Business</b> (es gratis) con el número del puesto. Permite poner horario, dirección y un mensaje de bienvenida automático.',
+      'En la app, en <b>Ajustes</b>, revisá que el número de "WhatsApp para pedidos" sea el del puesto, con 549 adelante (ej: 5491126467210).',
+      'Las ráfagas se publican en el estado: cuando llega la hora, a Adrián le aparece el botón naranja "¡Hora de publicar!". Lo toca, elige WhatsApp y después "Mi estado".'
+    ],
+    nota: 'WhatsApp no permite publicar estados solos desde otra app. Por eso siempre es con un toque de Adrián.'
+  },
+  instagram: {
+    titulo: '📸 Cuenta de Instagram',
+    pasos: [
+      'Bajá la app <b>Instagram</b> y tocá <b>Crear cuenta nueva</b>. Usá un mail del puesto (no el personal).',
+      'Elegí el usuario: algo fácil como <code>lodeadri</code> o <code>lodeadri.diarios</code>.',
+      'Foto de perfil: el logo del sello (lo podés bajar del catálogo o pedírselo a Rodrigo).',
+      'Pasala a <b>cuenta profesional</b>: Perfil → menú ☰ → <b>Configuración</b> → <b>Tipo de cuenta y herramientas</b> → <b>Cambiar a cuenta profesional</b> → <b>Empresa</b>. Categoría: "Kiosco de revistas" o "Tienda".',
+      'En la biografía poné la dirección del puesto, el horario y el link del catálogo.',
+      'Vinculala con la página de Facebook del puesto (ver el tutorial de Facebook). Es obligatorio para que más adelante las ráfagas salgan solas.',
+      'Volvé acá y cargá el usuario con @.'
+    ],
+    nota: 'Los nombres de los menús pueden cambiar un poco según la versión de Instagram.'
+  },
+  facebook: {
+    titulo: '👍 Página de Facebook',
+    pasos: [
+      'Entrá a Facebook con tu cuenta personal (la página queda a tu nombre como administrador, pero se ve como el puesto).',
+      'Menú ☰ → <b>Páginas</b> → <b>Crear página</b>.',
+      'Nombre: <b>Lo de Adri</b>. Categoría: "Puesto de periódicos" o "Tienda de revistas".',
+      'Cargá el logo como foto de perfil, la dirección, el horario y el WhatsApp.',
+      'Para vincular Instagram: en la página, <b>Configuración</b> → <b>Cuentas vinculadas</b> → <b>Instagram</b> → <b>Conectar cuenta</b>.',
+      'Copiá el enlace de la página (ej: <code>facebook.com/lodeadri</code>) y cargalo acá.'
+    ],
+    nota: 'Para que las ráfagas salgan solas en Facebook e Instagram, Rodrigo tiene que dar un permiso desde Meta una sola vez. Eso lo hacemos juntos cuando las dos cuentas estén creadas.'
+  },
+  telegram: {
+    titulo: '✈️ Canal de Telegram',
+    pasos: [
+      'Bajá <b>Telegram</b> y creá una cuenta con tu número.',
+      'Tocá el lápiz ✏️ → <b>Nuevo canal</b>. Nombre: <b>Lo de Adri</b>. Descripción: qué vendés y el horario.',
+      'Elegí <b>Canal público</b> y el enlace, por ejemplo <code>t.me/lodeadri</code>.',
+      'Para que las ráfagas salgan solas: buscá <b>@BotFather</b> (tiene tilde azul), escribile <code>/newbot</code>, poné un nombre (ej: "Lo de Adri ráfagas") y un usuario que termine en <code>bot</code>.',
+      'BotFather te da un código largo (la "llave" del bot). <b>No lo publiques ni lo mandes por chat</b>: guardalo para cargarlo en Supabase con Rodrigo.',
+      'Entrá al canal → <b>Administradores</b> → <b>Agregar administrador</b> → buscá tu bot → dejá activado <b>Publicar mensajes</b>.',
+      'Volvé acá y cargá el canal con @.'
+    ],
+    nota: 'Telegram es la red más fácil para publicar sola: con el canal y la llave del bot ya funciona.'
+  },
+  tiktok: {
+    titulo: '🎵 Cuenta de TikTok',
+    pasos: [
+      'Bajá <b>TikTok</b> y creá una cuenta con el mail del puesto.',
+      'Perfil → <b>Editar perfil</b>: nombre "Lo de Adri", el logo y el link del catálogo en la biografía.',
+      'Opcional: Configuración → <b>Cuenta</b> → <b>Cambiar a cuenta de empresa</b>.',
+      'Cargá el usuario acá para que aparezca en el catálogo.'
+    ],
+    nota: 'TikTok no deja publicar historias automáticas desde otra app, así que no entra en las ráfagas.'
+  }
+};
+
+function valorRed(id) {
+  return String((estado.redes || {})[id] || '').trim();
+}
+
+function estadoRed(r) {
+  if (!r.campo) return { clase: 'ok', texto: 'Listo' };
+  if (!valorRed(r.id)) return { clase: '', texto: 'Sin cargar' };
+  return r.automatica ? { clase: 'falta', texto: 'Falta conectar' } : { clase: 'ok', texto: 'Cargada' };
+}
+
+function dibujarRedes() {
+  $('listaRedes').innerHTML = REDES.map(r => {
+    const est = estadoRed(r);
+    const v = valorRed(r.id);
+    return `
+      <div class="red-tarjeta">
+        <div class="red-cab"><span class="ic">${r.icono}</span><span class="n">${escapar(r.nombre)}</span><span class="red-estado ${est.clase}">${est.texto}</span></div>
+        <p class="ayuda-campo">${escapar(r.ayuda)}</p>
+        ${r.campo ? `<label class="mini" for="red-${r.id}">${escapar(r.campo)}</label>
+          <input type="text" id="red-${r.id}" value="${escapar(v)}" placeholder="${escapar(r.ejemplo)}" autocomplete="off" autocapitalize="none">` : ''}
+        <div class="red-botones">
+          <button class="btn-sec" onclick="abrirTutorial('${r.id}')">📖 Cómo se hace</button>
+          ${r.campo && v ? `<a class="btn-sec" style="text-align:center;text-decoration:none;color:inherit" href="${escapar(r.url(v))}" target="_blank" rel="noopener">🔗 Ver cuenta</a>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function abrirTutorial(id) {
+  const t = TUTORIALES[id];
+  if (!t) return;
+  mostrarHoja(`
+    <div class="tutorial">
+      <h3>${t.titulo}</h3>
+      <ol>${t.pasos.map(p => `<li>${p}</li>`).join('')}</ol>
+      ${t.nota ? `<div class="nota">ℹ️ ${t.nota}</div>` : ''}
+      <div class="acciones"><button class="accion cerrar" onclick="cerrarHoja()">Entendido</button></div>
+    </div>`);
+}
+
+function limpiarCuenta(id, v) {
+  v = String(v || '').trim();
+  if (!v) return '';
+  if (id === 'instagram' || id === 'tiktok' || id === 'telegram') {
+    v = v.replace(/^https?:\/\/(www\.)?(instagram\.com|tiktok\.com|t\.me)\/@?/i, '').replace(/\/.*$/, '').replace(/^@/, '');
+    return v ? '@' + v : '';
+  }
+  if (id === 'facebook') return v.replace(/^https?:\/\/(www\.|m\.)?/i, '').replace(/\/$/, '');
+  return v;
+}
+
+async function guardarRedes() {
+  const redes = {};
+  REDES.filter(r => r.campo).forEach(r => {
+    const v = limpiarCuenta(r.id, $('red-' + r.id).value);
+    if (v) redes[r.id] = v;
+  });
+  mostrarCargando('Guardando…');
+  const { error } = await db.from('ajustes').update({ redes }).eq('id', 1);
+  ocultarCargando();
+  if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return; }
+  estado.redes = redes;
+  dibujarRedes();
+  dibujarRedesCatalogo();
+  avisar('✅ Redes guardadas');
+}
+
+// En el catálogo: "Seguinos en…"
+function dibujarRedesCatalogo() {
+  const caja = $('catRedes');
+  if (!caja) return;
+  caja.innerHTML = REDES.filter(r => r.campo && valorRed(r.id)).map(r =>
+    `<a href="${escapar(r.url(valorRed(r.id)))}" target="_blank" rel="noopener">${r.icono} ${escapar(r.nombre)}</a>`).join('');
+}
+
+// =====================================================================
 //  WHATSAPP
 // =====================================================================
 
@@ -2791,6 +2973,7 @@ function arrancarAdmin() {
 
 async function iniciar() {
   aplicarTema(temaGuardado());
+  if ($('versionApp')) $('versionApp').textContent = 'Versión ' + VERSION_APP;
   aplicarNombre();
   cargarAjustes();
 
@@ -2815,19 +2998,27 @@ async function iniciar() {
   $('loginClave').addEventListener('keydown', e => { if (e.key === 'Enter') ingresar(); });
 }
 
-// Service worker: siempre trae la última versión cuando hay internet
+// Service worker: siempre trae la última versión cuando hay internet.
+// Revisa al abrir la app y cada vez que se vuelve a ella; si hay versión nueva, recarga sola.
 if ('serviceWorker' in navigator) {
+  let registro = null;
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').then(reg => {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+      registro = reg;
       reg.update();
     }).catch(err => console.warn('SW no registrado', err));
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && registro) registro.update().catch(() => {});
   });
 
   let recargado = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (recargado) return;
     recargado = true;
-    location.reload();
+    try { avisar('🔄 Actualizando la app…', 'info', 1500); } catch (e) {}
+    setTimeout(() => location.reload(), 300);
   });
 }
 

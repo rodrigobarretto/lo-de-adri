@@ -645,6 +645,25 @@
     .opciones-desc button.activo { border-color: var(--azul); background: var(--azul-claro); }
     .descripcion-detalle { color: var(--suave); margin: -6px 0 14px; line-height: 1.45; }
 
+    /* REDES */
+    .red-tarjeta { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 20px; padding: 16px; margin-bottom: 14px; }
+    .red-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .red-cab .ic { font-size: 1.8rem; }
+    .red-cab .n { flex: 1; font-weight: 900; font-size: 1.15rem; }
+    .red-estado { font-size: .78rem; font-weight: 900; padding: 4px 10px; border-radius: 999px; background: var(--gris2); color: var(--suave); white-space: nowrap; }
+    .red-estado.ok { background: var(--verde-claro); color: var(--verde); }
+    .red-estado.falta { background: var(--ambar-claro); color: var(--ambar); }
+    .red-tarjeta .ayuda-campo { margin-bottom: 10px; }
+    .red-botones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .tutorial ol { padding-left: 1.3rem; margin: 6px 0 14px; display: grid; gap: 10px; }
+    .tutorial li { line-height: 1.4; }
+    .tutorial .nota { background: var(--ambar-claro); color: var(--texto); border-radius: 12px; padding: 10px 12px; font-size: .92rem; margin-bottom: 12px; }
+    .tutorial code { background: var(--gris2); padding: 1px 6px; border-radius: 6px; }
+    .cat-redes { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 22px; }
+    .cat-redes:empty { display: none; }
+    .cat-redes a { text-decoration: none; background: var(--campo); border: 2px solid var(--borde); color: var(--texto); border-radius: 999px; padding: 10px 14px; font-weight: 800; font-size: .95rem; }
+    .version-app { margin-top: 2px; font-size: .78rem; }
+
     /* INGRESO */
     .login { max-width: 420px; margin: 30px auto; }
     .login p { color: var(--suave); }
@@ -706,6 +725,7 @@
         </button>
       </div>
       <button class="ayuda" onclick="pedirAyuda()">🙋 Necesito ayuda (llamar a Rodrigo)</button>
+      <p class="estado version-app" id="versionApp"></p>
       <p class="estado" id="estadoConexion"><span class="punto"></span><span>Revisando conexión…</span></p>
       <button class="link-ajustes" onclick="irA('ajustes')">⚙️ Ajustes</button>
     </section>
@@ -734,6 +754,10 @@
       <button class="opcion ajuste-rafagas" onclick="irA('movimientos')">
         <span class="icono">📒</span>
         <span><span class="tit">Ventas y bajas</span><span class="sub">Todo lo que salió del stock</span></span>
+      </button>
+      <button class="opcion ajuste-extra" onclick="irA('redes')">
+        <span class="icono">📱</span>
+        <span><span class="tit">Redes del puesto</span><span class="sub">Cuentas de Instagram, Facebook, Telegram… y cómo crearlas</span></span>
       </button>
       <button class="opcion ajuste-extra" onclick="irA('motivos')">
         <span class="icono">🏷️</span>
@@ -980,6 +1004,13 @@
       <div id="listaMov"></div>
     </section>
 
+    <!-- ===================== REDES DEL PUESTO ===================== -->
+    <section id="pantalla-redes" class="oculto">
+      <p class="saludo">Cargá las cuentas del puesto. Aparecen en el catálogo ("Seguinos en…") y las usan las ráfagas. ¿No tenés la cuenta? Tocá <b>📖 Cómo se hace</b>.</p>
+      <div id="listaRedes"></div>
+      <button class="btn-principal btn-azul" onclick="guardarRedes()">✅ Guardar redes</button>
+    </section>
+
     <!-- ===================== MOTIVOS DE BAJA ===================== -->
     <section id="pantalla-motivos" class="oculto">
       <p class="saludo">Son las razones para dar de baja algo que no se vendió. Aparecen como botones al dar de baja.</p>
@@ -1009,6 +1040,7 @@
         </label>
       </div>
       <div id="catalogo"></div>
+      <div id="catRedes" class="cat-redes"></div>
       <p class="cat-pie" id="catPie"></p>
     </section>
 
