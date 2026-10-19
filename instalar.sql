@@ -379,3 +379,6 @@ create policy "titulos: autorizados borran" on public.titulos for delete to auth
 
 -- ---------- Agregado: redes del puesto ----------
 alter table public.ajustes add column if not exists redes jsonb not null default '{}'::jsonb;
+
+-- ---------- Agregado: modelo o detalle ----------
+alter table public.productos add column if not exists detalle text;

@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '12';                // subir junto con VERSION de sw.js
+const VERSION_APP = '13';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -345,6 +345,7 @@ function actualizarFormularioModo() {
   $('tarjetaCategoria').classList.toggle('oculto', !!serieExistente);
   $('numPasoTipo').textContent = serieExistente ? '5' : '6';
   if (enSerie) dibujarListaSeries();
+  mostrarTituloFinal();
 }
 
 function dibujarListaSeries() {
@@ -441,6 +442,8 @@ function limpiarFormulario() {
   $('nuevaCantidad').textContent = '1';
   $('nombreSerieNueva').value = '';
   $('nuevaDescripcion').value = '';
+  $('nuevoDetalle').value = '';
+  if ($('vistaTitulo')) $('vistaTitulo').textContent = '';
   estado.editorial = '';
   // En una colección deja el precio puesto: casi siempre el siguiente número cuesta lo mismo
   if (estado.modo !== 'serie') $('nuevoPrecio').value = '';
@@ -456,11 +459,11 @@ async function guardarProducto() {
   let titulo = $('nuevoTitulo').value.trim();
   const numero = $('nuevoNumero').value.trim();
   const nombreNueva = $('nombreSerieNueva').value.trim();
+  const detalle = $('nuevoDetalle').value.trim().slice(0, 60);
 
   if (enSerie) {
     if (!estado.serieElegida) { avisar('Elegí de qué colección es (paso 2)', 'mal'); return; }
     if (estado.serieElegida === 'nueva' && !nombreNueva) { avisar('Falta el nombre de la colección', 'mal'); $('nombreSerieNueva').focus(); return; }
-    if (!numero) { avisar('Falta el número (paso 2)', 'mal'); $('nuevoNumero').focus(); return; }
   } else if (!titulo) {
     avisar('Falta escribir qué es (paso 2)', 'mal'); $('nuevoTitulo').focus(); return;
   }
@@ -503,13 +506,14 @@ async function guardarProducto() {
         serie = serieDe(estado.serieElegida);
       }
       fila.serie_id = serie.id;
-      fila.numero = numero;
+      fila.numero = numero || null;
       fila.categoria = serie.categoria;
       fila.editorial = fila.editorial || serie.editorial || null;
-      fila.titulo = serie.nombre + ' N° ' + numero;
+      fila.titulo = armarTitulo(serie.nombre, numero, detalle);
     } else {
-      fila.titulo = titulo;
+      fila.titulo = armarTitulo(titulo, '', detalle);
     }
+    fila.detalle = detalle || null;
 
     const { error } = await db.from('productos').insert([fila]);
     if (error) throw error;
@@ -685,15 +689,14 @@ function consultaDeLaCarga() {
     const numero = $('nuevoNumero').value.trim();
     const editorial = estado.editorial || (serie && serie.editorial) || '';
     if (!nombre) return '';
-    return [nombre, numero ? 'N° ' + numero : '', editorial].filter(Boolean).join(' ');
+    return [nombre, numero ? 'N° ' + numero : '', $('nuevoDetalle').value.trim(), editorial].filter(Boolean).join(' ');
   }
-  return [$('nuevoTitulo').value.trim(), estado.editorial].filter(Boolean).join(' ');
+  return [$('nuevoTitulo').value.trim(), $('nuevoDetalle').value.trim(), estado.editorial].filter(Boolean).join(' ');
 }
 
 function buscarFotoParaCarga() {
   const q = consultaDeLaCarga();
   if (!q) { avisar('Primero escribí qué es (paso 2)', 'mal'); window.scrollTo({ top: 300, behavior: 'smooth' }); return; }
-  if (estado.modo === 'serie' && !$('nuevoNumero').value.trim()) { avisar('Poné el número así busco la tapa correcta', 'mal'); $('nuevoNumero').focus(); return; }
   abrirBusqueda(q, { tipo: 'carga' });
 }
 
@@ -857,7 +860,40 @@ function numerosDeSerie(id, soloEnVenta = false) {
 
 // Ordena "3", "10", "2bis" de forma natural
 function compararNumero(a, b) {
+  // Los que no tienen número van al final
+  if (!a.numero && b.numero) return 1;
+  if (a.numero && !b.numero) return -1;
   return String(a.numero || '').localeCompare(String(b.numero || ''), 'es', { numeric: true });
+}
+
+// Arma el título que se ve: "Rápido y Furioso N° 12 (Chevrolet Camaro Z28)"
+function armarTitulo(base, numero, detalle) {
+  let t = String(base || '').trim();
+  if (numero) t += ' N° ' + String(numero).trim();
+  if (detalle) t += ' (' + String(detalle).trim() + ')';
+  return t;
+}
+
+// Título sin el número ni el detalle (para editar lo suelto)
+function tituloBase(p) {
+  let t = String(p.titulo || '');
+  if (p.detalle && t.endsWith(' (' + p.detalle + ')')) t = t.slice(0, -(' (' + p.detalle + ')').length);
+  if (p.numero && t.endsWith(' N° ' + p.numero)) t = t.slice(0, -(' N° ' + p.numero).length);
+  return t.trim();
+}
+
+function mostrarTituloFinal() {
+  const el = $('vistaTitulo');
+  if (!el) return;
+  let base = '';
+  if (estado.modo === 'serie') {
+    const serie = estado.serieElegida && estado.serieElegida !== 'nueva' ? serieDe(estado.serieElegida) : null;
+    base = serie ? serie.nombre : $('nombreSerieNueva').value.trim();
+  } else {
+    base = $('nuevoTitulo').value.trim();
+  }
+  const t = armarTitulo(base, estado.modo === 'serie' ? $('nuevoNumero').value.trim() : '', $('nuevoDetalle').value.trim());
+  el.textContent = t ? 'Así se va a ver: ' + t : '';
 }
 
 function portadaDeSerie(serie) {
@@ -1015,7 +1051,7 @@ function dibujarHoja(id) {
       <button onclick="pantallaIngreso(${pid})"><span class="ic">➕</span>Llegaron más</button>
     </div>
     <div class="acciones">
-      <button class="accion" onclick="pantallaTitulo(${pid})">✏️ Cambiar el ${p.serie_id ? 'número' : 'título'}</button>
+      <button class="accion" onclick="pantallaEditar(${pid})">✏️ Editar publicación (título, número, modelo…)</button>
       ${p.serie_id && serieDe(p.serie_id) ? `<button class="accion" onclick="pantallaNombreSerie(${Number(p.serie_id)}, ${pid})">📚 Cambiar el nombre de la colección</button>` : ''}
       <button class="accion" onclick="pantallaPrecio(${pid})">💲 Cambiar el precio</button>
       <button class="accion" onclick="buscarFotoParaProducto(${pid})">🔎 Buscar foto y descripción en internet</button>
@@ -1068,38 +1104,93 @@ function pantallaPrecio(id) {
   setTimeout(() => { input.focus(); input.select(); }, 150);
 }
 
-function pantallaTitulo(pid) {
+// Editar todo lo de una publicación ya cargada
+let editandoPid = null;
+
+function pantallaEditar(pid) {
+  editandoPid = Number(pid);
   const p = productoPorId(pid);
   const serie = p.serie_id ? serieDe(p.serie_id) : null;
-  $('hojaContenido').innerHTML = serie ? `
-    <h3>✏️ Cambiar el número</h3>
-    <p class="info">${escapar(serie.nombre)}</p>
-    <div class="campo-precio campo-numero" style="margin-bottom:14px">
-      <span>N°</span>
-      <input type="text" id="tituloEditado" inputmode="numeric" value="${escapar(p.numero || '')}" autocomplete="off">
+  const opcionesSerie = '<option value="">— Ninguna (es algo suelto) —</option>' +
+    estado.series.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+      .map(x => `<option value="${Number(x.id)}" ${serie && Number(serie.id) === Number(x.id) ? 'selected' : ''}>${escapar(x.nombre)}</option>`).join('');
+  const opcionesCat = Object.keys(CATEGORIAS).map(c => `<option value="${c}" ${p.categoria === c ? 'selected' : ''}>${escapar(CATEGORIAS[c])}</option>`).join('');
+  $('hojaContenido').innerHTML = `
+    <h3>✏️ Editar publicación</h3>
+    <div class="editar-campos">
+      <label class="mini" for="edSerie">Colección</label>
+      <select id="edSerie" onchange="actualizarEdicion()">${opcionesSerie}</select>
+
+      <div id="edBloqueTitulo" class="${serie ? 'oculto' : ''}">
+        <label class="mini" for="edTitulo">Título</label>
+        <input type="text" id="edTitulo" value="${escapar(serie ? '' : tituloBase(p))}" autocomplete="off" autocapitalize="sentences" oninput="actualizarEdicion()">
+      </div>
+
+      <div id="edBloqueNumero" class="${serie ? '' : 'oculto'}">
+        <label class="mini" for="edNumero">Número <span class="opcional">(si lo tiene)</span></label>
+        <div class="campo-precio campo-numero">
+          <span>N°</span>
+          <input type="text" id="edNumero" inputmode="numeric" value="${escapar(p.numero || '')}" autocomplete="off" oninput="actualizarEdicion()">
+        </div>
+      </div>
+
+      <label class="mini" for="edDetalle">Modelo o detalle <span class="opcional">(opcional)</span></label>
+      <input type="text" id="edDetalle" value="${escapar(p.detalle || '')}" placeholder="Ej: Chevrolet Camaro Z28" maxlength="60" autocomplete="off" oninput="actualizarEdicion()">
+
+      <p class="titulo-final" id="edTituloFinal"></p>
+
+      <label class="mini" for="edCategoria">Tipo</label>
+      <select id="edCategoria">${opcionesCat}</select>
+
+      <label class="mini" for="edPrecio">Precio</label>
+      <div class="campo-precio">
+        <span>$</span>
+        <input type="text" id="edPrecio" inputmode="numeric" value="${Number(p.precio)}" autocomplete="off">
+      </div>
     </div>
-    <div class="acciones">
-      <button class="btn-principal" onclick="guardarTitulo(${Number(pid)})">✅ Guardar</button>
-      <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Cancelar</button>
-    </div>` : `
-    <h3>✏️ Cambiar el título</h3>
-    <input type="text" id="tituloEditado" value="${escapar(p.titulo)}" autocomplete="off" autocapitalize="sentences" style="margin-bottom:14px">
-    <div class="acciones">
-      <button class="btn-principal" onclick="guardarTitulo(${Number(pid)})">✅ Guardar</button>
+    <div class="acciones espacio-arriba">
+      <button class="btn-principal" onclick="guardarEdicion(${Number(pid)})">✅ Guardar cambios</button>
       <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Cancelar</button>
     </div>`;
   $('hoja').scrollTop = 0;
-  const input = $('tituloEditado');
-  setTimeout(() => { input.focus(); input.select(); }, 150);
+  actualizarEdicion();
 }
 
-async function guardarTitulo(pid) {
-  const p = productoPorId(pid);
-  const valor = $('tituloEditado').value.trim();
-  if (!valor) { avisar(p.serie_id ? 'Poné el número' : 'Escribí el título', 'mal'); return; }
-  const serie = p.serie_id ? serieDe(p.serie_id) : null;
-  const cambios = serie ? { numero: valor, titulo: serie.nombre + ' N° ' + valor } : { titulo: valor.slice(0, 120) };
-  await actualizarProducto(pid, cambios, '✏️ Título cambiado');
+function datosEdicion() {
+  const sid = $('edSerie').value ? Number($('edSerie').value) : null;
+  const serie = sid ? serieDe(sid) : null;
+  const numero = serie ? $('edNumero').value.trim() : '';
+  const detalle = $('edDetalle').value.trim().slice(0, 60);
+  const base = serie ? serie.nombre : $('edTitulo').value.trim();
+  return { sid, serie, numero, detalle, base, titulo: armarTitulo(base, numero, detalle) };
+}
+
+function actualizarEdicion() {
+  const d = datosEdicion();
+  $('edBloqueTitulo').classList.toggle('oculto', !!d.serie);
+  $('edBloqueNumero').classList.toggle('oculto', !d.serie);
+  // Si se saca de una colección, propone el nombre que tenía como título
+  if (!d.serie && !$('edTitulo').value.trim()) {
+    const p = productoPorId(editandoPid);
+    if (p) $('edTitulo').value = tituloBase(p);
+  }
+  $('edTituloFinal').textContent = 'Así se va a ver: ' + (datosEdicion().titulo || '—');
+}
+
+async function guardarEdicion(pid) {
+  const d = datosEdicion();
+  if (!d.base) { avisar('Falta el título', 'mal'); $('edTitulo').focus(); return; }
+  const precio = soloNumeros($('edPrecio').value);
+  if (!precio || precio <= 0) { avisar('Poné un precio válido', 'mal'); $('edPrecio').focus(); return; }
+  const cambios = {
+    titulo: d.titulo.slice(0, 160),
+    serie_id: d.sid,
+    numero: d.numero || null,
+    detalle: d.detalle || null,
+    categoria: $('edCategoria').value,
+    precio
+  };
+  await actualizarProducto(pid, cambios, '✏️ Publicación actualizada');
 }
 
 function pantallaNombreSerie(sid, pid) {
@@ -1126,7 +1217,7 @@ async function guardarNombreSerie(sid) {
     if (error) throw error;
     // Actualiza el título de cada número de la colección
     for (const p of numerosDeSerie(sid)) {
-      const r = await db.from('productos').update({ titulo: nombre + ' N° ' + (p.numero || '') }).eq('id', p.id);
+      const r = await db.from('productos').update({ titulo: armarTitulo(nombre, p.numero, p.detalle) }).eq('id', p.id);
       if (r.error) throw r.error;
     }
     const serie = serieDe(sid);
@@ -2818,8 +2909,9 @@ function ordenarEntradas(lista) {
 }
 
 function tarjetaCatalogo(p, enSerie) {
-  const titulo = enSerie && p.numero
-    ? `<div class="numero-grande">N° ${escapar(p.numero)}</div>`
+  const titulo = enSerie && (p.numero || p.detalle)
+    ? (p.numero ? `<div class="numero-grande">N° ${escapar(p.numero)}</div>` : '') +
+      (p.detalle ? `<div class="${p.numero ? 'detalle-cat' : 'titulo'}">${escapar(p.detalle)}</div>` : '')
     : `<div class="titulo">${escapar(p.titulo)}</div>`;
   return `
     <div class="producto">
