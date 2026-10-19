@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '11';                // subir junto con VERSION de sw.js
+const VERSION_APP = '12';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -885,10 +885,23 @@ function elegirFiltro(boton) {
   dibujarStock();
 }
 
+// Texto donde se busca: título, descripción, editorial, categoría y colección.
+// Sin importar mayúsculas ni tildes; si escribís varias palabras, tienen que estar todas.
+function textoBuscable(p) {
+  const serie = p.serie_id ? serieDe(p.serie_id) : null;
+  return normalizar([p.titulo, p.descripcion, p.editorial, CATEGORIAS[p.categoria] || p.categoria, serie && serie.nombre, p.numero].filter(Boolean).join(' '));
+}
+
+function coincideBusqueda(p, texto) {
+  const palabras = normalizar(texto).split(' ').filter(Boolean);
+  if (!palabras.length) return true;
+  const hay = textoBuscable(p);
+  return palabras.every(w => hay.includes(w));
+}
+
 function filtrarPorTexto(lista, texto) {
-  const t = texto.trim().toLowerCase();
-  if (!t) return lista;
-  return lista.filter(p => (p.titulo || '').toLowerCase().includes(t));
+  if (!String(texto || '').trim()) return lista;
+  return lista.filter(p => coincideBusqueda(p, texto));
 }
 
 function etiquetasDe(p) {
@@ -1002,6 +1015,8 @@ function dibujarHoja(id) {
       <button onclick="pantallaIngreso(${pid})"><span class="ic">➕</span>Llegaron más</button>
     </div>
     <div class="acciones">
+      <button class="accion" onclick="pantallaTitulo(${pid})">✏️ Cambiar el ${p.serie_id ? 'número' : 'título'}</button>
+      ${p.serie_id && serieDe(p.serie_id) ? `<button class="accion" onclick="pantallaNombreSerie(${Number(p.serie_id)}, ${pid})">📚 Cambiar el nombre de la colección</button>` : ''}
       <button class="accion" onclick="pantallaPrecio(${pid})">💲 Cambiar el precio</button>
       <button class="accion" onclick="buscarFotoParaProducto(${pid})">🔎 Buscar foto y descripción en internet</button>
       <button class="accion" onclick="pantallaDescripcion(${pid})">📝 ${p.descripcion ? 'Cambiar la descripción' : 'Agregar descripción'}</button>
@@ -1051,6 +1066,80 @@ function pantallaPrecio(id) {
   `;
   const input = $('precioEditado');
   setTimeout(() => { input.focus(); input.select(); }, 150);
+}
+
+function pantallaTitulo(pid) {
+  const p = productoPorId(pid);
+  const serie = p.serie_id ? serieDe(p.serie_id) : null;
+  $('hojaContenido').innerHTML = serie ? `
+    <h3>✏️ Cambiar el número</h3>
+    <p class="info">${escapar(serie.nombre)}</p>
+    <div class="campo-precio campo-numero" style="margin-bottom:14px">
+      <span>N°</span>
+      <input type="text" id="tituloEditado" inputmode="numeric" value="${escapar(p.numero || '')}" autocomplete="off">
+    </div>
+    <div class="acciones">
+      <button class="btn-principal" onclick="guardarTitulo(${Number(pid)})">✅ Guardar</button>
+      <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Cancelar</button>
+    </div>` : `
+    <h3>✏️ Cambiar el título</h3>
+    <input type="text" id="tituloEditado" value="${escapar(p.titulo)}" autocomplete="off" autocapitalize="sentences" style="margin-bottom:14px">
+    <div class="acciones">
+      <button class="btn-principal" onclick="guardarTitulo(${Number(pid)})">✅ Guardar</button>
+      <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Cancelar</button>
+    </div>`;
+  $('hoja').scrollTop = 0;
+  const input = $('tituloEditado');
+  setTimeout(() => { input.focus(); input.select(); }, 150);
+}
+
+async function guardarTitulo(pid) {
+  const p = productoPorId(pid);
+  const valor = $('tituloEditado').value.trim();
+  if (!valor) { avisar(p.serie_id ? 'Poné el número' : 'Escribí el título', 'mal'); return; }
+  const serie = p.serie_id ? serieDe(p.serie_id) : null;
+  const cambios = serie ? { numero: valor, titulo: serie.nombre + ' N° ' + valor } : { titulo: valor.slice(0, 120) };
+  await actualizarProducto(pid, cambios, '✏️ Título cambiado');
+}
+
+function pantallaNombreSerie(sid, pid) {
+  const serie = serieDe(sid);
+  const cant = numerosDeSerie(sid).length;
+  $('hojaContenido').innerHTML = `
+    <h3>📚 Nombre de la colección</h3>
+    <p class="info">Cambia en los ${cant} número${cant === 1 ? '' : 's'} cargado${cant === 1 ? '' : 's'}.</p>
+    <input type="text" id="serieEditada" value="${escapar(serie.nombre)}" autocomplete="off" autocapitalize="words" style="margin-bottom:14px">
+    <div class="acciones">
+      <button class="btn-principal" onclick="guardarNombreSerie(${Number(sid)})">✅ Guardar</button>
+      <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Cancelar</button>
+    </div>`;
+  $('hoja').scrollTop = 0;
+  setTimeout(() => { $('serieEditada').focus(); $('serieEditada').select(); }, 150);
+}
+
+async function guardarNombreSerie(sid) {
+  const nombre = $('serieEditada').value.trim().slice(0, 80);
+  if (!nombre) { avisar('Escribí el nombre', 'mal'); return; }
+  mostrarCargando('Guardando…');
+  try {
+    const { error } = await db.from('series').update({ nombre }).eq('id', sid);
+    if (error) throw error;
+    // Actualiza el título de cada número de la colección
+    for (const p of numerosDeSerie(sid)) {
+      const r = await db.from('productos').update({ titulo: nombre + ' N° ' + (p.numero || '') }).eq('id', p.id);
+      if (r.error) throw r.error;
+    }
+    const serie = serieDe(sid);
+    if (serie) serie.nombre = nombre;
+    ocultarCargando();
+    cerrarHoja();
+    avisar('📚 Nombre cambiado');
+    refrescar();
+  } catch (err) {
+    console.error(err);
+    ocultarCargando();
+    avisar('❌ ' + mensajeError(err), 'mal', 5000);
+  }
 }
 
 async function guardarPrecio(id) {
@@ -2667,11 +2756,7 @@ async function arrancarCatalogo() {
 // Lo que ve el cliente: cosas sueltas + una tarjeta por colección
 function entradasCatalogo(texto) {
   const t = (texto || '').trim().toLowerCase();
-  const coincide = p => {
-    if (!t) return true;
-    const serie = p.serie_id ? serieDe(p.serie_id) : null;
-    return (p.titulo || '').toLowerCase().includes(t) || (serie && serie.nombre.toLowerCase().includes(t));
-  };
+  const coincide = p => coincideBusqueda(p, texto);
   const entradas = [];
   const grupos = {};
   enVenta().filter(coincide).forEach(p => {

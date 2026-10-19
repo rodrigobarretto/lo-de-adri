@@ -972,7 +972,7 @@
         <button data-filtro="archivo" onclick="elegirFiltro(this)">📦 Archivo</button>
         <button data-filtro="agotado" onclick="elegirFiltro(this)">🚫 Sin stock</button>
       </div>
-      <input type="search" id="buscador" class="buscador" placeholder="🔎 Buscar por nombre" oninput="dibujarStock()">
+      <input type="search" id="buscador" class="buscador" placeholder="🔎 Buscar por título o palabra clave" oninput="dibujarStock()">
       <div class="fila-contador">
         <p class="contador" id="contador"></p>
         <button class="btn-chico" id="btnElegirVarios" onclick="entrarSeleccion()">☑️ Elegir varios</button>
@@ -1025,7 +1025,7 @@
     <!-- ===================== CATÁLOGO PÚBLICO (para clientes) ===================== -->
     <section id="pantalla-catalogo" class="oculto">
       <p class="cat-intro">Tocá una tapa para verla grande, o <b>Reservar</b> y el puesto te confirma por WhatsApp.</p>
-      <input type="search" id="buscadorCatalogo" class="buscador" placeholder="🔎 Buscar por nombre" oninput="dibujarCatalogo()">
+      <input type="search" id="buscadorCatalogo" class="buscador" placeholder="🔎 Buscar por título o palabra clave" oninput="dibujarCatalogo()">
       <div id="vistaSerie" class="oculto"></div>
       <div class="chips" id="filtrosCliente"></div>
       <div class="barra-orden" id="barraOrden">
