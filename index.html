@@ -686,6 +686,15 @@
     .producto .sello-fotos { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: .75rem; font-weight: 800; padding: 3px 8px; border-radius: 999px; z-index: 1; }
     .resultados-fotos button[data-orden]::after { content: attr(data-orden); }
     .lista-fotos { display: grid; gap: 10px; margin-bottom: 12px; }
+    .persona { display: grid; gap: 10px; }
+    .persona-cab { display: flex; gap: 12px; align-items: center; }
+    .persona-cab .icono { font-size: 1.8rem; }
+    .persona-cab .sub { display: block; color: var(--suave); font-size: .9rem; font-weight: 600; }
+    .persona-botones { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+    .persona-botones:empty { display: none; }
+    .persona-botones button { border-radius: 12px; padding: 12px; font-weight: 800; background: var(--gris); border: 2px solid var(--borde); color: var(--texto); }
+    .persona-botones .no { background: var(--rojo-claro); color: var(--rojo); border-color: var(--rojo-borde); }
+    .datos-ingreso p { font-size: 1.15rem; margin: 4px 0; }
     .portada-actual { display: grid; justify-items: center; gap: 6px; margin: 4px 0 14px; }
     .hoja .portada-actual img, .portada-actual img { width: 150px; height: 200px; object-fit: cover; border-radius: 14px; margin: 0; border: 3px solid var(--borde); }
     .portada-actual .sin-foto { width: 150px; height: 200px; display: grid; place-items: center; font-size: 3rem; background: var(--gris); border-radius: 14px; }
@@ -732,8 +741,10 @@
       <div class="tarjeta login">
         <p class="paso">🔐 Activar este teléfono</p>
         <p>Este paso se hace una sola vez. Después la app queda abierta.</p>
-        <input type="email" id="loginEmail" placeholder="Correo" autocomplete="username">
-        <input type="password" id="loginClave" placeholder="Contraseña" autocomplete="current-password">
+        <label class="mini" for="loginEmail">Tu teléfono <span class="opcional">(o el correo del puesto)</span></label>
+        <input type="text" id="loginEmail" inputmode="tel" placeholder="Ej: 11 2646 7210" autocomplete="username">
+        <label class="mini" for="loginClave">Clave</label>
+        <input type="password" id="loginClave" placeholder="La que te pasó Rodrigo" autocomplete="current-password">
         <button class="btn-principal btn-azul" onclick="ingresar()">Entrar</button>
       </div>
     </section>
@@ -794,6 +805,10 @@
       <button class="opcion ajuste-extra" onclick="irA('redes')">
         <span class="icono">📱</span>
         <span><span class="tit">Redes del puesto</span><span class="sub">Cuentas de Instagram, Facebook, Telegram… y cómo crearlas</span></span>
+      </button>
+      <button class="opcion ajuste-extra" onclick="irA('personas')">
+        <span class="icono">👥</span>
+        <span><span class="tit">Personas autorizadas</span><span class="sub">Teléfonos que pueden vender, dar de baja y cargar</span></span>
       </button>
       <button class="opcion ajuste-extra" onclick="irA('colecciones')">
         <span class="icono">📚</span>
@@ -1057,6 +1072,23 @@
       <p class="saludo">Cargá las cuentas del puesto. Aparecen en el catálogo ("Seguinos en…") y las usan las ráfagas. ¿No tenés la cuenta? Tocá <b>📖 Cómo se hace</b>.</p>
       <div id="listaRedes"></div>
       <button class="btn-principal btn-azul" onclick="guardarRedes()">✅ Guardar redes</button>
+    </section>
+
+    <!-- ===================== PERSONAS AUTORIZADAS ===================== -->
+    <section id="pantalla-personas" class="oculto">
+      <p class="saludo">Estas personas pueden usar la app del puesto: vender, reservar, dar de baja, cargar y cambiar todo. Cada una entra con su teléfono y su clave.</p>
+      <div id="listaPersonas"></div>
+      <div class="tarjeta">
+        <p class="paso">➕ Agregar una persona</p>
+        <label class="mini" for="personaNombre">Nombre</label>
+        <input type="text" id="personaNombre" placeholder="Ej: Adrián" autocomplete="off" autocapitalize="words">
+        <label class="mini" for="personaTelefono">Teléfono</label>
+        <input type="text" id="personaTelefono" inputmode="tel" placeholder="Con código de área: 11 2646 7210" autocomplete="off">
+        <label class="mini" for="personaClave">Clave para entrar</label>
+        <input type="text" id="personaClave" inputmode="numeric" placeholder="Mínimo 6 números" autocomplete="off">
+        <p class="ayuda-campo">Anotala: se la vas a pasar a esa persona. Si se la olvida, acá le ponés otra.</p>
+        <button class="btn-principal btn-azul espacio-arriba" onclick="agregarPersona()">➕ Agregar</button>
+      </div>
     </section>
 
     <!-- ===================== COLECCIONES ===================== -->

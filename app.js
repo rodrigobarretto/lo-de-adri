@@ -14,12 +14,40 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '17';                // subir junto con VERSION de sw.js
+const VERSION_APP = '18';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+// Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
+// plano mucho tiempo), renueva la sesión y lo reintenta una vez, sin que se note.
+let renovando = null;
+async function fetchConReintento(input, init = {}) {
+  const resp = await fetch(input, init);
+  const url = typeof input === 'string' ? input : input.url;
+  if (resp.status !== 401 || url.includes('/auth/v1/')) return resp;
+  try {
+    if (!renovando) renovando = db.auth.refreshSession().finally(() => { setTimeout(() => { renovando = null; }, 3000); });
+    const { data } = await renovando;
+    if (!data || !data.session) return resp;
+    const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined) || {});
+    headers.set('Authorization', 'Bearer ' + data.session.access_token);
+    return fetch(input, { ...init, headers });
+  } catch (e) {
+    return resp;
+  }
+}
+
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  global: { fetch: fetchConReintento },
+  auth: { persistSession: true, autoRefreshToken: true }
+});
+
+// Al volver a la app, renueva la sesión enseguida si está por vencer
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') db.auth.getSession().catch(() => {});
+});
 
 const MODO_CATALOGO = new URLSearchParams(location.search).has('catalogo');
+const LINK_APP = location.origin + location.pathname.replace(/index\.html$/, '');
 const LINK_CATALOGO = location.origin + location.pathname.replace(/index\.html$/, '') + '?catalogo';
 
 const CATEGORIAS_PLURAL = {
@@ -142,6 +170,9 @@ function mensajeError(error) {
   if (/NO_ALCANZA/.test(m)) return 'No hay tantos disponibles (puede haber reservados).';
   if (/TELEFONO_INVALIDO/.test(m)) return 'El teléfono no parece válido. Poné código de área y número.';
   if (/FALTA_NOMBRE/.test(m)) return 'Falta el nombre.';
+  if (/CLAVE_CORTA/.test(m)) return 'La clave tiene que tener 6 números o letras como mínimo.';
+  if (/NO_A_VOS_MISMO/.test(m)) return 'No te podés quitar a vos mismo.';
+  if (/ULTIMO_AUTORIZADO/.test(m)) return 'Tiene que quedar al menos una persona autorizada.';
   if (/DEMASIADAS_RESERVAS/.test(m)) return 'Ya hay varias reservas con ese teléfono hoy. Escribinos por WhatsApp.';
   if (/CANTIDAD_INVALIDA/.test(m)) return 'La cantidad no es válida.';
   if (/NO_EXISTE/.test(m)) return 'Eso ya no existe. Actualizá la pantalla.';
@@ -210,14 +241,15 @@ const TITULOS = {
   movimientos: '📒 Ventas y bajas',
   motivos: '🏷️ Motivos de baja',
   redes: '📱 Redes del puesto',
-  colecciones: '📚 Colecciones'
+  colecciones: '📚 Colecciones',
+  personas: '👥 Personas autorizadas'
 };
 
 // Pantalla "madre" de cada una: adonde lleva el botón Volver
 const PADRE = {
   cargar: 'inicio', stock: 'inicio', ajustes: 'inicio', compartir: 'inicio',
   rafagas: 'ajustes', rafaga: 'rafagas',
-  reservas: 'inicio', movimientos: 'ajustes', motivos: 'ajustes', redes: 'ajustes', colecciones: 'ajustes'
+  reservas: 'inicio', movimientos: 'ajustes', motivos: 'ajustes', redes: 'ajustes', colecciones: 'ajustes', personas: 'ajustes'
 };
 
 function volver() {
@@ -277,6 +309,7 @@ function irA(pantalla, agregarHistorial = true) {
   if (pantalla === 'motivos') cargarMotivos();
   if (pantalla === 'redes') dibujarRedes();
   if (pantalla === 'colecciones') cargarColecciones();
+  if (pantalla === 'personas') cargarPersonas();
 }
 
 let ignorarProximoAtras = false;   // cuando la app misma retrocede para cerrar una hoja
@@ -301,16 +334,27 @@ function saludar() {
 //  INGRESO (Rodrigo activa el teléfono una sola vez)
 // =====================================================================
 
+// Teléfono: se usan los últimos 10 dígitos (código de área + número), igual que en el servidor
+function normalizarTelefono(t) {
+  const d = String(t || '').replace(/\D/g, '');
+  return d.length > 10 ? d.slice(-10) : d;
+}
+
 async function ingresar() {
-  const email = $('loginEmail').value.trim();
+  const usuario = $('loginEmail').value.trim();
   const clave = $('loginClave').value;
-  if (!email || !clave) { avisar('Completá correo y contraseña', 'mal'); return; }
+  if (!usuario || !clave) { avisar('Completá tu teléfono y la clave', 'mal'); return; }
+  // Con @ es un correo; si no, es un teléfono
+  const email = usuario.includes('@') ? usuario : normalizarTelefono(usuario) + '@tel.lodeadri.app';
 
   mostrarCargando('Entrando…');
   const { error } = await db.auth.signInWithPassword({ email, password: clave });
   ocultarCargando();
 
-  if (error) { avisar('Correo o contraseña incorrectos', 'mal'); return; }
+  if (error) {
+    avisar(/fetch|network/i.test(error.message || '') ? 'No hay internet. Probá de nuevo.' : 'El teléfono o la clave no son correctos', 'mal');
+    return;
+  }
   $('loginClave').value = '';
   avisar('✅ Teléfono activado');
   arrancarAdmin();
@@ -1476,6 +1520,140 @@ async function actualizarProducto(id, cambios, mensajeOk) {
   cerrarHoja();
   avisar(mensajeOk);
   refrescar();
+}
+
+// =====================================================================
+//  PERSONAS AUTORIZADAS (pueden vender, dar de baja, cargar, etc.)
+//  Cada una entra con su teléfono y su clave.
+// =====================================================================
+
+let personas = [];
+
+async function invocarFuncion(nombre, cuerpo) {
+  const { data, error } = await db.functions.invoke(nombre, { body: cuerpo });
+  if (error) {
+    let codigo = error.message || 'error';
+    try { const j = await error.context.json(); if (j && j.error) codigo = j.error; } catch (e) {}
+    throw new Error(codigo);
+  }
+  return data;
+}
+
+async function cargarPersonas() {
+  $('listaPersonas').innerHTML = '<p class="vacio">Cargando…</p>';
+  try {
+    personas = (await invocarFuncion('autorizados', { accion: 'listar' })).personas || [];
+    dibujarPersonas();
+  } catch (err) {
+    console.error(err);
+    $('listaPersonas').innerHTML = `<p class="vacio">${escapar(mensajeError(err))}</p>`;
+  }
+}
+
+function dibujarPersonas() {
+  $('listaPersonas').innerHTML = personas.map(p => `
+    <div class="tarjeta persona">
+      <div class="persona-cab">
+        <span class="icono">${p.telefono ? '📱' : '🏪'}</span>
+        <span><b>${escapar(p.nombre || 'Sin nombre')}</b>${p.soyYo ? ' <span class="etiqueta nuevo">Sos vos</span>' : ''}
+          <span class="sub">${p.telefono ? 'Tel. ' + escapar(telefonoLindo(p.telefono)) : 'Cuenta del puesto (con correo)'}</span></span>
+      </div>
+      <div class="persona-botones">
+        ${p.telefono ? `<button onclick="pantallaClavePersona('${escapar(p.user_id)}')">🔑 Cambiar clave</button>` : ''}
+        ${p.soyYo ? '' : `<button class="no" onclick="pantallaQuitarPersona('${escapar(p.user_id)}')">🗑️ Quitar</button>`}
+      </div>
+    </div>`).join('') || '<p class="vacio">No hay nadie.</p>';
+}
+
+function personaPorId(id) { return personas.find(p => p.user_id === id); }
+
+async function agregarPersona() {
+  const nombre = $('personaNombre').value.trim();
+  const telefono = normalizarTelefono($('personaTelefono').value);
+  const clave = $('personaClave').value.trim();
+  if (!nombre) { avisar('Poné el nombre', 'mal'); $('personaNombre').focus(); return; }
+  if (telefono.length < 8) { avisar('Poné el teléfono con código de área', 'mal'); $('personaTelefono').focus(); return; }
+  if (clave.length < 6) { avisar('La clave tiene que tener 6 números como mínimo', 'mal'); $('personaClave').focus(); return; }
+  mostrarCargando('Agregando…');
+  try {
+    personas = (await invocarFuncion('autorizados', { accion: 'agregar', nombre, telefono, clave })).personas || [];
+    ocultarCargando();
+    dibujarPersonas();
+    $('personaNombre').value = ''; $('personaTelefono').value = ''; $('personaClave').value = '';
+    mostrarHoja(`
+      <h3>✅ ${escapar(nombre)} ya puede usar la app</h3>
+      <p class="info">En su teléfono, que abra la app y en "Activar este teléfono" ponga:</p>
+      <div class="tarjeta datos-ingreso">
+        <p>📱 Teléfono: <b>${escapar(telefono)}</b></p>
+        <p>🔑 Clave: <b>${escapar(clave)}</b></p>
+      </div>
+      <div class="acciones">
+        <button class="accion wa" onclick="abrirWhatsApp('549${escapar(telefono)}', ${escapar(JSON.stringify('Hola ' + nombre + '! Ya podés usar la app de ' + estado.nombre + '.\nAbrila acá: ' + LINK_APP + '\nTeléfono: ' + telefono + '\nClave: ' + clave))})">📲 Mandarle los datos por WhatsApp</button>
+        <button class="accion cerrar" onclick="cerrarHoja()">Listo</button>
+      </div>`);
+  } catch (err) {
+    console.error(err);
+    ocultarCargando();
+    avisar('❌ ' + mensajeError(err), 'mal', 5000);
+  }
+}
+
+function pantallaClavePersona(id) {
+  const p = personaPorId(id);
+  if (!p) return;
+  mostrarHoja(`
+    <h3>🔑 Nueva clave</h3>
+    <p class="info">${escapar(p.nombre || '')} · Tel. ${escapar(telefonoLindo(p.telefono))}</p>
+    <input type="text" id="claveNueva" inputmode="numeric" placeholder="Mínimo 6 números" autocomplete="off" style="margin-bottom:14px">
+    <div class="acciones">
+      <button class="btn-principal" onclick="guardarClavePersona('${escapar(id)}')">✅ Guardar</button>
+      <button class="accion cerrar" onclick="cerrarHoja()">Cancelar</button>
+    </div>`);
+  setTimeout(() => $('claveNueva').focus(), 150);
+}
+
+async function guardarClavePersona(id) {
+  const clave = $('claveNueva').value.trim();
+  if (clave.length < 6) { avisar('Mínimo 6 números', 'mal'); return; }
+  mostrarCargando('Guardando…');
+  try {
+    personas = (await invocarFuncion('autorizados', { accion: 'clave', user_id: id, clave })).personas || [];
+    ocultarCargando();
+    cerrarHoja();
+    dibujarPersonas();
+    avisar('🔑 Clave cambiada. La próxima vez entra con la nueva');
+  } catch (err) {
+    console.error(err);
+    ocultarCargando();
+    avisar('❌ ' + mensajeError(err), 'mal', 5000);
+  }
+}
+
+function pantallaQuitarPersona(id) {
+  const p = personaPorId(id);
+  if (!p) return;
+  mostrarHoja(`
+    <h3>¿Quitar a ${escapar(p.nombre || 'esta persona')}?</h3>
+    <p class="info">Ya no va a poder vender, dar de baja ni cargar nada. Lo que hizo queda guardado.</p>
+    <div class="acciones">
+      <button class="accion peligro" style="text-align:center" onclick="quitarPersona('${escapar(id)}')">🗑️ Sí, quitar</button>
+      <button class="accion cerrar" onclick="cerrarHoja()">Cancelar</button>
+    </div>`);
+}
+
+async function quitarPersona(id) {
+  mostrarCargando('Quitando…');
+  try {
+    personas = (await invocarFuncion('autorizados', { accion: 'quitar', user_id: id })).personas || [];
+    ocultarCargando();
+    cerrarHoja();
+    dibujarPersonas();
+    avisar('🗑️ Quitada');
+  } catch (err) {
+    console.error(err);
+    ocultarCargando();
+    avisar('❌ ' + mensajeError(err), 'mal', 5000);
+  }
 }
 
 // =====================================================================
