@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '22';                // subir junto con VERSION de sw.js
+const VERSION_APP = '23';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 // Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
@@ -90,9 +90,10 @@ const estado = {
   motivos: [],
   movimientos: [],
   tabReservas: 'activa',
-  senaPct: Number(leerAjusteLocal('sena_pct')) || 60,   // seña para reservar lo que hay
+  senaPct: 100,                                          // se paga el total para reservar
   mpAlias: leerAjusteLocal('mp_alias') || '',            // alias para transferir
   mpTitular: leerAjusteLocal('mp_titular') || '',
+  mpCvu: leerAjusteLocal('mp_cvu') || '',
   filtroMov: 'todo'
 };
 
@@ -300,7 +301,7 @@ async function cargarAjustes() {
     if (data.nombre) { estado.nombre = data.nombre; guardarAjusteLocal('nombre', data.nombre); }
     if (data.whatsapp) { estado.whatsapp = data.whatsapp; guardarAjusteLocal('whatsapp', data.whatsapp); }
     if (data.redes) { estado.redes = data.redes; dibujarRedesCatalogo(); }
-    if (data.sena_pct != null) { estado.senaPct = Number(data.sena_pct); guardarAjusteLocal('sena_pct', data.sena_pct); }
+    estado.mpCvu = data.mp_cvu || ''; guardarAjusteLocal('mp_cvu', estado.mpCvu);
     estado.mpAlias = data.mp_alias || ''; guardarAjusteLocal('mp_alias', estado.mpAlias);
     estado.mpTitular = data.mp_titular || ''; guardarAjusteLocal('mp_titular', estado.mpTitular);
     if (data.dias_sin_repetir) { estado.diasSinRepetir = Number(data.dias_sin_repetir); guardarAjusteLocal('dias_sin_repetir', data.dias_sin_repetir); }
@@ -2227,9 +2228,8 @@ function cuentasDe(r) {
 function chipPlata(r) {
   const c = cuentasDe(r);
   if (c.total > 0 && c.falta === 0) return '<span class="chip-pago si">💵 Pagó todo</span>';
-  if (c.faltaSena === 0 && c.cobrado > 0) return `<span class="chip-pago si">✅ Señó ${plata(c.cobrado)} · falta ${plata(c.falta)}</span>`;
-  if (r.tipo === 'solicitud') return `<span class="chip-pago no">⏳ Tiene que pagar ${plata(c.faltaSena)}</span>`;
-  return `<span class="chip-pago no">⏳ Falta seña ${plata(c.faltaSena)}${c.cobrado ? ` (pagó ${plata(c.cobrado)})` : ''}</span>`;
+  if (c.faltaSena === 0 && c.cobrado > 0) return `<span class="chip-pago si">✅ Pagó ${plata(c.cobrado)} · falta ${plata(c.falta)}</span>`;
+  return `<span class="chip-pago no">⏳ Tiene que pagar ${plata(c.falta)}${c.cobrado ? ` (ya pagó ${plata(c.cobrado)})` : ''}</span>`;
 }
 
 function tarjetaReserva(r) {
@@ -2295,7 +2295,7 @@ function pantallaCobro(rid, luegoEntregar) {
   const sugerido = luegoEntregar ? c.falta : (c.faltaSena > 0 ? c.faltaSena : c.falta);
   mostrarHoja(`
     <h3>💵 Cobrar a ${escapar(r.cliente)}</h3>
-    <p class="info">Total ${plata(c.total)} · ${r.tipo === 'solicitud' ? 'hay que cobrar todo' : `seña ${plata(c.sena)}`} · ya pagó ${plata(c.cobrado)}</p>
+    <p class="info">Total ${plata(c.total)} · ya pagó ${plata(c.cobrado)} · falta ${plata(c.falta)}</p>
     <p class="mini">¿Cuánto te dio?</p>
     <div class="campo-precio"><span>$</span><input type="text" id="montoCobro" inputmode="numeric" value="${sugerido}" autocomplete="off"></div>
     <div class="chips-montos">
@@ -2344,12 +2344,14 @@ async function mandarLinkPago(rid) {
   if (!r) return;
   const p = productoPorId(r.producto_id);
   const c = cuentasDe(r);
-  const monto = c.faltaSena > 0 ? c.faltaSena : c.falta;
-  const que = r.tipo === 'solicitud' ? 'el pedido' : (c.faltaSena > 0 && c.faltaSena < c.falta ? 'la seña' : 'tu reserva');
+  const monto = c.falta;
+  const que = r.tipo === 'solicitud' ? 'el pedido' : 'tu reserva';
   const link = '';   // cobro por transferencia al alias (sin comisión)
   let texto = `Hola ${r.cliente}! 👋 Para ${que} de ${r.cantidad} × *${p ? p.titulo : ''}* en ${estado.nombre} son ${plata(monto)}.`;
   if (link) texto += `\nPodés pagar acá con Mercado Pago:\n${link}`;
-  else if (estado.mpAlias) texto += `\nPodés transferir al alias *${estado.mpAlias}*${estado.mpTitular ? ' (' + estado.mpTitular + ')' : ''} y mandarme el comprobante.`;
+  else if (estado.mpAlias || estado.mpCvu) texto += `\nEs una transferencia a nuestra cuenta de Mercado Pago:` +
+    (estado.mpAlias ? `\nAlias: *${estado.mpAlias}*` : '') + (estado.mpCvu ? `\nCVU: ${estado.mpCvu}` : '') +
+    (estado.mpTitular ? `\nA nombre de: ${estado.mpTitular}` : '') + `\nDespués mandame el comprobante por acá.`;
   else texto += '\nLo podés pagar acá en el puesto.';
   if (!estado.mpAlias) avisar('Tip: poné tu alias en Ajustes → Cobros', 'info', 4000);
   abrirWhatsApp(numeroWhatsApp(r.telefono), texto);
@@ -2404,7 +2406,7 @@ function pantallaReserva(pid, rid, desde) {
   const volver = desde === 'producto' ? `dibujarHoja(${Number(pid)})` : 'cerrarHoja()';
   mostrarHoja(`
     <h3>${r ? (solicitud ? '✏️ Editar pedido' : '✏️ Editar reserva') : (solicitud ? '📦 Pedir a la editorial' : '📌 Reservar')}</h3>
-    <p class="info">${escapar(p.titulo)} · ${plata(p.precio)} c/u · ${solicitud ? 'no hay en el puesto: se encarga para esta persona y paga el total' : `se pueden reservar ${max} · seña ${estado.senaPct}%`}</p>
+    <p class="info">${escapar(p.titulo)} · ${plata(p.precio)} c/u · ${solicitud ? 'no hay en el puesto: se encarga para esta persona y paga el total' : `se pueden reservar ${max} · se paga el total`}</p>
     <p class="mini">¿Cuántos?</p>
     ${selectorCantidad('cantHoja', r ? Number(r.cantidad) : 1, max, Number(p.precio))}
     <p class="mini">¿Para quién?</p>
@@ -2416,7 +2418,7 @@ function pantallaReserva(pid, rid, desde) {
       <button type="button" data-v="no" class="activo" onclick="elegirPago(this)">⏳ Todavía no</button>
       <button type="button" data-v="si" onclick="elegirPago(this)">💵 Pagó todo en efectivo</button>
     </div>
-    <p class="ayuda-campo">Si deja una seña, anotala después con 💵 Cobrar.</p>`}
+    <p class="ayuda-campo">Si paga por transferencia, anotalo después con 💵 Cobrar cuando veas la plata.</p>`}
     <p class="mini">Nota (opcional)</p>
     <input type="text" id="resNota" placeholder="Ej: pasa el sábado" value="${r && r.nota ? escapar(r.nota) : ''}" autocomplete="off">
     <div class="acciones espacio-arriba">
@@ -2540,7 +2542,7 @@ function escribirCliente(rid, motivo) {
   const c = cuentasDe(r);
   const sol = r.tipo === 'solicitud';
   const falta = c.faltaSena > 0
-    ? `\n${sol ? 'Para encargarlo hay que pagar el total' : 'Para guardártelo falta la seña'}: ${plata(c.faltaSena)}.` + (estado.mpAlias ? ` Podés transferir al alias *${estado.mpAlias}*.` : '')
+    ? `\n${sol ? 'Para encargarlo' : 'Para guardártelo'} hay que pagar el total: ${plata(c.faltaSena)}.` + (estado.mpAlias ? ` Podés transferir a nuestro Mercado Pago, alias *${estado.mpAlias}*.` : '')
     : '';
   const texto = motivo === 'confirmar'
     ? `Hola ${r.cliente}! 👋 Te confirmamos ${sol ? 'el pedido' : 'la reserva'} en ${estado.nombre}:\n${sol ? '📦' : '📌'} ${r.cantidad} × *${titulo}* — ${plata(c.total)}${falta}\n${sol ? 'Te avisamos cuando llegue.' : '¡Te esperamos!'}`
@@ -2796,14 +2798,12 @@ async function borrarMotivo(id) {
 function llenarAjustes() {
   $('ajusteNombre').value = estado.nombre;
   $('ajusteWhatsapp').value = estado.whatsapp;
-  $('ajusteSena').textContent = estado.senaPct;
   $('ajusteAlias').value = estado.mpAlias;
+  $('ajusteCvu').value = estado.mpCvu;
   $('ajusteTitular').value = estado.mpTitular;
 }
 
-function cambiarSena(delta) {
-  $('ajusteSena').textContent = Math.max(0, Math.min(100, (Number($('ajusteSena').textContent) || 0) + delta));
-}
+
 
 async function guardarAjustes() {
   const nombre = $('ajusteNombre').value.trim();
@@ -2813,10 +2813,12 @@ async function guardarAjustes() {
   if (whatsapp.length < 10) { avisar('El WhatsApp parece incompleto', 'mal'); return; }
 
   mostrarCargando('Guardando…');
-  const sena_pct = Number($('ajusteSena').textContent) || 0;
+  const sena_pct = 100;
   const mp_alias = $('ajusteAlias').value.trim().slice(0, 60);
+  const mp_cvu = $('ajusteCvu').value.replace(/\D/g, '').slice(0, 22);
+  if (mp_cvu && mp_cvu.length !== 22) { avisar('El CVU tiene 22 números', 'mal'); return; }
   const mp_titular = $('ajusteTitular').value.trim().slice(0, 60);
-  const { error } = await db.from('ajustes').upsert({ id: 1, nombre, whatsapp, sena_pct, mp_alias, mp_titular });
+  const { error } = await db.from('ajustes').upsert({ id: 1, nombre, whatsapp, sena_pct, mp_alias, mp_titular, mp_cvu });
   ocultarCargando();
   if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return; }
 
@@ -2824,8 +2826,8 @@ async function guardarAjustes() {
   estado.whatsapp = whatsapp;
   guardarAjusteLocal('nombre', nombre);
   guardarAjusteLocal('whatsapp', whatsapp);
-  Object.assign(estado, { senaPct: sena_pct, mpAlias: mp_alias, mpTitular: mp_titular });
-  guardarAjusteLocal('sena_pct', sena_pct); guardarAjusteLocal('mp_alias', mp_alias); guardarAjusteLocal('mp_titular', mp_titular);
+  Object.assign(estado, { mpAlias: mp_alias, mpTitular: mp_titular, mpCvu: mp_cvu });
+  guardarAjusteLocal('mp_alias', mp_alias); guardarAjusteLocal('mp_titular', mp_titular); guardarAjusteLocal('mp_cvu', mp_cvu);
   aplicarNombre();
   avisar('✅ Ajustes guardados');
   irA('inicio', false);
@@ -3936,9 +3938,7 @@ function abrirPedido(id) {
     ? `<div class="aviso-solicitud">📦 <b>Solicitar ejemplar</b> pide este número a la editorial <b>solo para vos</b>.
         Para encargarlo hay que pagar el <b>total</b> por adelantado (Mercado Pago o en el puesto).
         Te avisamos por WhatsApp cuando llega.</div>`
-    : (estado.senaPct > 0
-      ? `<p class="ayuda-campo">Para guardártelo pedimos una seña del ${estado.senaPct}% (<span id="senaPedido">${plata(Math.ceil(Number(p.precio) * estado.senaPct / 100))}</span>). El resto lo pagás cuando lo retirás.</p>`
-      : '<p class="ayuda-campo">Te lo guardamos y el puesto te confirma por WhatsApp.</p>');
+    : '<p class="ayuda-campo">Para guardártelo hay que pagar el <b>total</b>: por transferencia a nuestro Mercado Pago o en el puesto. El puesto te confirma por WhatsApp.</p>';
   mostrarHoja(`
     <div class="pedido-cab">
       ${p.imagen_url ? `<img src="${escapar(p.imagen_url)}" alt="">` : ''}
@@ -3979,7 +3979,7 @@ async function reservarCliente(id) {
   sumarInteres(p, 'pedir', PUNTOS_PEDIR);
   if (!solicitud) p.reservado = reservadoDe(p) + cant;
   const total = cant * Number(p.precio);
-  const aPagar = solicitud ? total : Math.ceil(total * estado.senaPct / 100);
+  const aPagar = total;
   ultimaReservaCliente = { rid: Number(rid), nombre, cant, titulo: p.titulo, total, aPagar, solicitud, proximo: esProximo(p) };
   if (filtroCliente.serie) abrirSerie(filtroCliente.serie, false);
   else { dibujarFiltrosCliente(); dibujarCatalogo(); }
@@ -3990,7 +3990,7 @@ async function reservarCliente(id) {
 function pantallaPagoCliente() {
   const r = ultimaReservaCliente;
   if (!r) return;
-  const que = r.solicitud ? 'el total del pedido' : `la seña (${estado.senaPct}%)`;
+  const que = 'el total';
   mostrarHoja(`
     <div class="exito">✅</div>
     <h3>¡Listo, ${escapar(r.nombre)}!</h3>
@@ -4001,7 +4001,7 @@ function pantallaPagoCliente() {
         <p class="monto">${plata(r.aPagar)}</p>
       </div>
       <div class="acciones">
-        ${estado.mpAlias ? `<button class="btn-principal btn-mp" onclick="pantallaTransferencia()">💳 Pagar por transferencia (alias)</button>` : ''}
+        <button class="btn-principal btn-mp" onclick="pantallaTransferencia()">💳 Pagar con Mercado Pago<span class="chico-btn">por transferencia</span></button>
         <button class="accion" onclick="pagoEnLocal()">🏪 Prefiero pagar en el puesto</button>
         <button class="accion cerrar" onclick="cerrarHoja()">Seguir mirando</button>
       </div>` : `
@@ -4033,23 +4033,44 @@ async function pagarConMercadoPago(rid) {
 
 function pantallaTransferencia() {
   const r = ultimaReservaCliente;
+  if (!estado.mpAlias && !estado.mpCvu) {
+    mostrarHoja(`
+      <h3>💳 Pagar con Mercado Pago</h3>
+      <p class="info">Escribinos por WhatsApp y te pasamos los datos para transferir ${plata(r.aPagar)}.</p>
+      <div class="acciones">
+        <button class="btn-principal btn-wa" onclick="avisarReserva('datos')">💬 Pedir los datos por WhatsApp</button>
+        <button class="accion" onclick="pantallaPagoCliente()">◀ Volver</button>
+      </div>`);
+    return;
+  }
   mostrarHoja(`
-    <h3>💳 Pagar por transferencia</h3>
-    <p class="info">Transferí ${plata(r.aPagar)} desde Mercado Pago o tu banco a este alias:</p>
-    <div class="caja-pago">
-      <p class="monto chico">${escapar(estado.mpAlias)}</p>
-      ${estado.mpTitular ? `<p>A nombre de ${escapar(estado.mpTitular)}</p>` : ''}
-      <button class="accion" onclick="copiarAlias()">📋 Copiar alias</button>
+    <h3>💳 Pagar con Mercado Pago</h3>
+    <div class="aviso-solicitud">
+      Es una <b>transferencia</b> a la cuenta de Mercado Pago del puesto. No se paga con tarjeta.<br>
+      <b>Cómo hacerla:</b> abrí la app de Mercado Pago → <b>Transferir</b> → <b>Con alias o CVU</b>, pegá el dato de abajo y poné el monto.
+      También la podés hacer desde la app de tu banco.
     </div>
-    <p class="ayuda-campo">Después mandanos el comprobante por WhatsApp.</p>
+    <div class="caja-pago">
+      <p>Monto a transferir</p>
+      <p class="monto">${plata(r.aPagar)}</p>
+      <button class="accion" onclick="copiarTexto('${Math.round(r.aPagar)}', 'Monto')">📋 Copiar monto</button>
+    </div>
+    <div class="caja-pago">
+      ${estado.mpAlias ? `<p>Alias</p><p class="monto chico">${escapar(estado.mpAlias)}</p>
+        <button class="accion" onclick="copiarTexto(estado.mpAlias, 'Alias')">📋 Copiar alias</button>` : ''}
+      ${estado.mpCvu ? `<p>CVU</p><p class="monto chico">${escapar(estado.mpCvu)}</p>
+        <button class="accion" onclick="copiarTexto(estado.mpCvu, 'CVU')">📋 Copiar CVU</button>` : ''}
+      ${estado.mpTitular ? `<p>A nombre de <b>${escapar(estado.mpTitular)}</b></p>` : ''}
+    </div>
+    <p class="ayuda-campo">Cuando termines, mandanos el comprobante por WhatsApp. El puesto revisa que llegó y te confirma.</p>
     <div class="acciones">
-      <button class="btn-principal btn-wa" onclick="avisarReserva('transferencia')">💬 Mandar comprobante por WhatsApp</button>
+      <button class="btn-principal btn-wa" onclick="avisarReserva('transferencia')">💬 Ya transferí: mandar comprobante</button>
       <button class="accion" onclick="pantallaPagoCliente()">◀ Volver</button>
     </div>`);
 }
 
-function copiarAlias() {
-  try { navigator.clipboard.writeText(estado.mpAlias); avisar('📋 Alias copiado'); } catch (e) { avisar(estado.mpAlias, 'info'); }
+function copiarTexto(texto, que) {
+  try { navigator.clipboard.writeText(String(texto)); avisar('📋 ' + que + ' copiado'); } catch (e) { avisar(String(texto), 'info'); }
 }
 
 function pagoEnLocal() {
@@ -4061,7 +4082,8 @@ function avisarReserva(como) {
   const r = ultimaReservaCliente;
   if (!r) return;
   const que = r.proximo ? '🔜 Reservé antes de que salga' : r.solicitud ? '📦 Solicité (pedido a editorial)' : '📌 Reservé';
-  const pago = como === 'transferencia' ? `\n💳 Te transferí ${plata(r.aPagar)}, te paso el comprobante.`
+  const pago = como === 'transferencia' ? `\n💳 Te transferí ${plata(r.aPagar)} a Mercado Pago, te paso el comprobante.`
+    : como === 'datos' ? `\n💳 ¿Me pasan los datos para transferir ${plata(r.aPagar)}?`
     : como === 'local' ? `\n🏪 Pago ${plata(r.aPagar)} en el puesto.` : '';
   abrirWhatsApp(estado.whatsapp, `Hola! 👋 Soy ${r.nombre}. ${que} desde el catálogo:\n${r.cant} × *${r.titulo}* — ${plata(r.total)}${pago}\n¿Me confirman?`);
 }

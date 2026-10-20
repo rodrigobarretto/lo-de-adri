@@ -378,6 +378,7 @@
     .caja-pago .monto { font-size: 2rem; font-weight: 900; color: var(--verde); }
     .caja-pago .monto.chico { font-size: 1.4rem; color: var(--texto); word-break: break-all; }
     .btn-mp { background: #009ee3; box-shadow: 0 4px 10px rgba(0,158,227,.3); }
+    .btn-mp .chico-btn { display: block; font-size: .95rem; font-weight: 700; opacity: .9; }
     .chips-montos { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
     .chips-montos button { border-radius: 999px; padding: 8px 12px; font-weight: 800; background: var(--gris); border: 2px solid var(--borde); color: var(--texto); }
     .etiqueta.sol { background: var(--azul-claro); color: var(--azul); }
@@ -837,16 +838,14 @@
       </div>
       <div class="tarjeta">
         <p class="paso">💳 Cobros</p>
-        <div class="contador-fila">
-          <span>Seña para reservar</span>
-          <div class="stepper"><button type="button" onclick="cambiarSena(-10)">−</button><output id="ajusteSena">60</output><button type="button" onclick="cambiarSena(10)">+</button></div>
-        </div>
-        <p class="ayuda-campo">% del precio que se pide para guardar algo que hay en el puesto. Los pedidos a la editorial se pagan completos.</p>
-        <label class="mini" for="ajusteAlias">Alias de Mercado Pago para transferencias</label>
+        <p class="ayuda-campo">Las reservas, los pedidos a la editorial y las reservas de Próximamente se pagan completos, por transferencia a tu Mercado Pago o en el puesto.</p>
+        <label class="mini" for="ajusteAlias">Alias de Mercado Pago</label>
         <input type="text" id="ajusteAlias" placeholder="Ej: lodeadri.mp" autocomplete="off" autocapitalize="off">
+        <label class="mini" for="ajusteCvu">CVU <span class="opcional">(opcional, 22 números)</span></label>
+        <input type="text" id="ajusteCvu" inputmode="numeric" placeholder="0000003100..." autocomplete="off">
         <label class="mini" for="ajusteTitular">A nombre de</label>
         <input type="text" id="ajusteTitular" placeholder="Ej: Adrián Pérez" autocomplete="off" autocapitalize="words">
-        <p class="ayuda-campo">Al cliente le aparece este alias para transferir (sin comisión). Revisá que la plata llegó y anotalo con 💵 Cobrar.</p>
+        <p class="ayuda-campo">El cliente ve estos datos al tocar "Pagar con Mercado Pago" (es una transferencia, sin comisión). Revisá que la plata llegó y anotalo con 💵 Cobrar. Los ves en la app de Mercado Pago, en los datos de tu cuenta (alias y CVU).</p>
       </div>
       <button class="btn-principal btn-azul" onclick="guardarAjustes()">✅ Guardar ajustes</button>
       <button class="opcion ajuste-rafagas" onclick="irA('movimientos')">
@@ -1170,7 +1169,7 @@
 
     <!-- ===================== CATÁLOGO PÚBLICO (para clientes) ===================== -->
     <section id="pantalla-catalogo" class="oculto">
-      <p class="cat-intro">Tocá una tapa para verla grande. <b>Reservar</b> te guarda lo que hay en el puesto (con una seña). Si algo no está, <b>Solicitar ejemplar</b> lo encarga a la editorial solo para vos, pagando el total.</p>
+      <p class="cat-intro">Tocá una tapa para verla grande. <b>Reservar</b> te guarda lo que hay en el puesto (pagando el total). Si algo no está, <b>Solicitar ejemplar</b> lo encarga a la editorial solo para vos, pagando el total.</p>
       <input type="search" id="buscadorCatalogo" class="buscador" placeholder="🔎 Buscar por título o palabra clave" oninput="dibujarCatalogo()">
       <div id="vistaSerie" class="oculto"></div>
       <div class="chips" id="filtrosCliente"></div>
