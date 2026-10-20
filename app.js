@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '21';                // subir junto con VERSION de sw.js
+const VERSION_APP = '22';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 // Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
@@ -135,7 +135,7 @@ function diasDesde(fechaIso) {
   return Math.floor((Date.now() - new Date(fechaIso).getTime()) / 86400000);
 }
 
-// "nuevo" solo vale durante DIAS_NOVEDAD; después pasa solo al archivo
+// "nuevo" solo vale durante DIAS_NOVEDAD; después pasa solo a stock
 function esProximo(p) { return p && p.tipo === 'proximo'; }
 
 // "sale el 15/11" o "sale pronto"
@@ -533,7 +533,22 @@ async function subirFoto(archivo) {
   return db.storage.from(BUCKET).getPublicUrl(nombre).data.publicUrl;
 }
 
-const MAX_FOTOS = 3;   // portada + 2 extra
+const MAX_FOTOS = 3;
+const MAX_DESCRIPCION = 1000;
+
+// Contador "quedan N caracteres" debajo de una descripción
+function contarDescripcion(campo) {
+  const c = $(campo.id + 'Cuenta');
+  if (c) c.textContent = `${campo.value.length} de ${MAX_DESCRIPCION}`;
+}
+
+// Descripción para mostrar: si es larga, primeras líneas y "Ver más"
+function descripcionHtml(p) {
+  if (!p.descripcion) return '';
+  const largo = p.descripcion.length > 220;
+  return `<div class="descripcion-detalle ${largo ? 'recortada' : ''}"><p>${escapar(p.descripcion)}</p>${largo
+    ? `<button type="button" class="ver-mas" onclick="const d=this.parentNode; d.classList.toggle('recortada'); this.textContent = d.classList.contains('recortada') ? 'Ver más ▾' : 'Ver menos ▴'">Ver más ▾</button>` : ''}</div>`;
+}   // portada + 2 extra
 
 function fotosDe(p) {
   return [p.imagen_url].concat(Array.isArray(p.fotos_extra) ? p.fotos_extra : []).filter(Boolean);
@@ -574,6 +589,7 @@ function limpiarFormulario() {
   $('nuevaCantidad').textContent = '1';
   $('nombreSerieNueva').value = '';
   $('nuevaDescripcion').value = '';
+  contarDescripcion($('nuevaDescripcion'));
   $('nuevoDetalle').value = '';
   if ($('vistaTitulo')) $('vistaTitulo').textContent = '';
   estado.editorial = '';
@@ -645,7 +661,7 @@ async function guardarProducto() {
       fecha_salida: estado.tipo === 'proximo' ? ($('nuevaSalida').value || null) : null,
       visitas: 0,
       cantidad: estado.tipo === 'proximo' ? 0 : Math.max(0, Number($('nuevaCantidad').textContent) || 0),
-      descripcion: $('nuevaDescripcion').value.trim().slice(0, 300) || null,
+      descripcion: $('nuevaDescripcion').value.trim().slice(0, MAX_DESCRIPCION) || null,
       fotos_extra: extrasUrls,
       editorial: estado.editorial || null
     };
@@ -985,7 +1001,7 @@ async function usarBusqueda() {
           dibujarFotosExtra();
         }
       }
-      if (texto) $('nuevaDescripcion').value = texto;
+      if (texto) { $('nuevaDescripcion').value = texto; contarDescripcion($('nuevaDescripcion')); }
       ocultarCargando();
       cerrarHoja();
       avisar('✅ Listo. Revisá y tocá Guardar' + avisoParcial);
@@ -1099,7 +1115,8 @@ function pantallaDescripcion(pid) {
   $('hojaContenido').innerHTML = `
     <h3>📝 Descripción</h3>
     <p class="info">${escapar(p.titulo)}</p>
-    <textarea id="descEditada" rows="4" maxlength="300" placeholder="De qué trata, en una o dos líneas">${escapar(p.descripcion || '')}</textarea>
+    <textarea id="descEditada" rows="8" maxlength="${MAX_DESCRIPCION}" oninput="contarDescripcion(this)" placeholder="De qué trata: contenido, qué trae, para quién es…">${escapar(p.descripcion || '')}</textarea>
+    <p class="cuenta-desc" id="descEditadaCuenta">${(p.descripcion || '').length} de ${MAX_DESCRIPCION}</p>
     <div class="acciones espacio-arriba">
       <button class="btn-principal" onclick="guardarDescripcion(${Number(pid)})">✅ Guardar</button>
       <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Cancelar</button>
@@ -1108,7 +1125,7 @@ function pantallaDescripcion(pid) {
 }
 
 async function guardarDescripcion(pid) {
-  await actualizarProducto(pid, { descripcion: $('descEditada').value.trim().slice(0, 300) || null }, '📝 Descripción guardada');
+  await actualizarProducto(pid, { descripcion: $('descEditada').value.trim().slice(0, MAX_DESCRIPCION) || null }, '📝 Descripción guardada');
 }
 
 // =====================================================================
@@ -1231,7 +1248,7 @@ function etiquetasDe(p) {
     : `<span class="etiqueta cant">📦 ${cant}</span>` + (res ? `<span class="etiqueta res">📌 ${res} reservad${res === 1 ? 'o' : 'os'}</span>` : '');
   const tipo = esNovedad(p)
     ? '<span class="etiqueta nuevo">✨ Nuevo · ' + diasQueQuedan(p) + ' día' + (diasQueQuedan(p) === 1 ? '' : 's') + '</span>'
-    : '<span class="etiqueta">📦 Archivo</span>';
+    : '<span class="etiqueta">📦 Stock</span>';
   const serie = p.serie_id ? '<span class="etiqueta">📚 Colección</span>' : '';
   return stock + tipo + serie;
 }
@@ -1318,7 +1335,7 @@ function dibujarHoja(id) {
   $('hojaContenido').innerHTML = `
     ${galeria(p)}
     <h3>${escapar(p.titulo)}</h3>
-    ${p.descripcion ? `<p class="descripcion-detalle">${escapar(p.descripcion)}</p>` : ''}
+    ${descripcionHtml(p)}
     <p class="info">${plata(p.precio)} · ${escapar(CATEGORIAS[p.categoria] || p.categoria)}
       ${pedidos > 0 ? ' · ⭐ ' + pedidos + ' punto' + (pedidos === 1 ? '' : 's') + ' de interés' : ''}</p>
     ${esProximo(p) ? (() => {
@@ -1355,7 +1372,7 @@ function dibujarHoja(id) {
       <button class="accion" onclick="buscarFotoParaProducto(${pid})">🔎 Buscar fotos y descripción en internet</button>
       <button class="accion" onclick="pantallaDescripcion(${pid})">📝 ${p.descripcion ? 'Cambiar la descripción' : 'Agregar descripción'}</button>
       ${esProximo(p) ? '' : nuevo
-        ? `<button class="accion" onclick="cambiarTipo(${pid}, 'stock')">📦 Pasar al archivo</button>`
+        ? `<button class="accion" onclick="cambiarTipo(${pid}, 'stock')">📦 Pasar a stock</button>`
         : `<button class="accion" onclick="cambiarTipo(${pid}, 'nuevo')">✨ Marcar como nuevo otra vez</button>`}
       ${esProximo(p) ? '' : `<button class="accion" onclick="cambiarTipo(${pid}, 'proximo')">🔜 Pasar a Próximamente</button>`}
       ${disp ? `<button class="accion wa" onclick="compartirProducto(${pid})">📲 Mandar esta por WhatsApp</button>` : ''}
@@ -1443,7 +1460,7 @@ function pantallaEditar(pid) {
       <label class="mini" for="edEstado">Estado</label>
       <select id="edEstado" onchange="$('edBloqueSalida').classList.toggle('oculto', this.value !== 'proximo')">
         <option value="nuevo" ${p.tipo === 'nuevo' ? 'selected' : ''}>✨ Nuevo</option>
-        <option value="stock" ${p.tipo === 'stock' ? 'selected' : ''}>📦 Archivo</option>
+        <option value="stock" ${p.tipo === 'stock' ? 'selected' : ''}>📦 Stock</option>
         <option value="proximo" ${p.tipo === 'proximo' ? 'selected' : ''}>🔜 Próximamente (todavía no salió)</option>
       </select>
       <div id="edBloqueSalida" class="${p.tipo === 'proximo' ? '' : 'oculto'}">
@@ -1573,7 +1590,7 @@ async function guardarPrecio(id) {
 async function cambiarTipo(id, tipo) {
   // Al volver a "nuevo" reinicia los 7 días
   const cambios = tipo === 'nuevo' ? { tipo, created_at: new Date().toISOString() } : { tipo };
-  await actualizarProducto(id, cambios, tipo === 'nuevo' ? '✨ Marcada como nueva' : tipo === 'proximo' ? '🔜 Pasó a Próximamente' : '📦 Pasó al archivo');
+  await actualizarProducto(id, cambios, tipo === 'nuevo' ? '✨ Marcada como nueva' : tipo === 'proximo' ? '🔜 Pasó a Próximamente' : '📦 Pasó a stock');
 }
 
 // ---------- Salió algo que estaba en Próximamente ----------
@@ -2630,7 +2647,7 @@ async function accionMasiva(accion) {
   const { error } = await db.from('productos').update(cambios).in('id', ids);
   ocultarCargando();
   if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return; }
-  avisar(accion === 'nuevo' ? `✨ ${ids.length} pasaron a nuevos` : `📦 ${ids.length} pasaron al archivo`);
+  avisar(accion === 'nuevo' ? `✨ ${ids.length} pasaron a nuevos` : `📦 ${ids.length} pasaron a stock`);
   salirSeleccion();
   cargarStock();
 }
@@ -3888,7 +3905,7 @@ function verProducto(id) {
     ${esNovedad(p) ? '<span class="etiqueta nuevo">✨ Recién llegado</span>' : ''}
     <h3>${escapar(p.titulo)}</h3>
     <p class="precio-detalle">${plata(p.precio)}</p>
-    ${p.descripcion ? `<p class="descripcion-detalle">${escapar(p.descripcion)}</p>` : ''}
+    ${descripcionHtml(p)}
     <div class="acciones">
       ${esProximo(p)
         ? `<p class="info">🔜 Todavía no salió (${escapar(textoSalida(p).toLowerCase())}). Reservalo y te lo guardamos apenas llegue.</p>

@@ -32,8 +32,8 @@ function limpiar(texto: string): string {
     .trim();
 }
 
-// Recorta a ~240 caracteres terminando en una oración si se puede
-function resumir(texto: string, max = 240): string {
+// Recorta a ~900 caracteres terminando en una oración si se puede
+function resumir(texto: string, max = 900): string {
   const t = limpiar(texto);
   if (t.length <= max) return t;
   const corte = t.slice(0, max);
@@ -130,10 +130,17 @@ Deno.serve(async (req) => {
         .then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
     // deno-lint-ignore no-explicit-any
     const g: any = await pedir({ engine: "google", q, num: "10" });
-    crudasWeb = (g.organic_results || []).map((r: { snippet?: string; displayed_link?: string; link?: string }) => ({
+    // La ficha de Google (si hay) suele traer la descripción más completa
+    // deno-lint-ignore no-explicit-any
+    const kg: any[] = g.knowledge_graph?.description
+      ? [{ kg: true, description: g.knowledge_graph.description, meta_url: { hostname: g.knowledge_graph.source?.name || "Google" } }]
+      : [];
+    // deno-lint-ignore no-explicit-any
+    crudasWeb = kg.concat((g.organic_results || []).map((r: any) => ({
       description: r.snippet || "",
       meta_url: { hostname: (() => { try { return new URL(r.link || "").hostname; } catch { return r.displayed_link || ""; } })() },
-    }));
+      extra_snippets: [r.rich_snippet?.top?.extensions?.join(". ")].filter(Boolean),
+    })));
     // deno-lint-ignore no-explicit-any
     const enLinea = (g.inline_images || []).map((im: any) => ({
       properties: { url: im.original || "", width: im.original_width, height: im.original_height },
@@ -200,17 +207,15 @@ Deno.serve(async (req) => {
     // deno-lint-ignore no-explicit-any
     .map(({ p: _p, ...x }: any) => x);
 
-  // Descripciones: textos cortos de editoriales, tiendas y medios
-  // deno-lint-ignore no-explicit-any
+  // Descripciones: textos de editoriales, tiendas y medios
   const vistos = new Set<string>();
-  // deno-lint-ignore no-explicit-any
   const descripciones = crudasWeb
     // deno-lint-ignore no-explicit-any
     .map((r: any) => {
       const host = r?.meta_url?.hostname || "";
       const extra = Array.isArray(r?.extra_snippets) ? r.extra_snippets.join(" ") : "";
-      const largo = limpiar(r?.description || "").length > 60 ? r.description : (r?.description || "") + " " + extra;
-      return { texto: resumir(largo), fuente: host, p: puntaje(host) };
+      const largo = (r?.description || "") + (extra ? " " + extra : "");
+      return { texto: resumir(largo), fuente: host, p: puntaje(host) + (r?.kg ? 4 : 0) };
     })
     // deno-lint-ignore no-explicit-any
     .filter((d: any) => {

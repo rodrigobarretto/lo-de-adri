@@ -678,6 +678,10 @@
     .opciones-desc button small { display: block; color: var(--suave); margin-top: 4px; font-size: .78rem; }
     .opciones-desc button.activo { border-color: var(--azul); background: var(--azul-claro); }
     .descripcion-detalle { color: var(--suave); margin: -6px 0 14px; line-height: 1.45; }
+    .descripcion-detalle p { margin: 0; white-space: pre-line; }
+    .descripcion-detalle.recortada p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+    .descripcion-detalle .ver-mas { background: none; border: 0; color: var(--azul); font-weight: 800; padding: 6px 0 0; font-size: .95rem; }
+    .cuenta-desc { text-align: right; color: var(--suave); font-size: .8rem; margin: 4px 2px 0; }
 
     /* REDES */
     .red-tarjeta { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 20px; padding: 16px; margin-bottom: 14px; }
@@ -1062,7 +1066,7 @@
         <p class="paso"><span class="num" id="numPasoTipo">6</span>¿Llegó hoy, es de antes o todavía no salió?</p>
         <div class="elegir elegir-3" id="elegirTipo">
           <button data-valor="nuevo" onclick="elegirTipo(this)" class="activo">✨ Llegó nuevo<span class="chico">Novedad 7 días</span></button>
-          <button data-valor="stock" onclick="elegirTipo(this)">📦 Es de antes<span class="chico">Al archivo</span></button>
+          <button data-valor="stock" onclick="elegirTipo(this)">📦 Es de antes<span class="chico">A stock</span></button>
           <button data-valor="proximo" onclick="elegirTipo(this)">🔜 Próxima&shy;mente<span class="chico">Se reserva antes</span></button>
         </div>
         <div id="bloqueSalida" class="oculto">
@@ -1074,7 +1078,8 @@
 
       <div class="tarjeta">
         <p class="paso">📝 Descripción para el catálogo <span class="opcional">(opcional)</span></p>
-        <textarea id="nuevaDescripcion" rows="3" maxlength="300" placeholder="De qué trata, en una o dos líneas. La búsqueda en internet la completa sola."></textarea>
+        <textarea id="nuevaDescripcion" rows="6" maxlength="1000" oninput="contarDescripcion(this)" placeholder="De qué trata: contenido, qué trae, para quién es… La búsqueda en internet la completa sola."></textarea>
+        <p class="cuenta-desc" id="nuevaDescripcionCuenta">0 de 1000</p>
       </div>
 
       <button class="btn-principal" id="btnGuardar" onclick="guardarProducto()">✅ GUARDAR</button>
@@ -1085,7 +1090,7 @@
       <div class="pestanas pestanas-5">
         <button data-filtro="todo" class="activo" onclick="elegirFiltro(this)">Todo</button>
         <button data-filtro="novedad" onclick="elegirFiltro(this)">✨ Nuevos</button>
-        <button data-filtro="archivo" onclick="elegirFiltro(this)">📦 Archivo</button>
+        <button data-filtro="archivo" onclick="elegirFiltro(this)">📦 Stock</button>
         <button data-filtro="agotado" onclick="elegirFiltro(this)">🚫 Sin stock</button>
         <button data-filtro="proximo" onclick="elegirFiltro(this)">🔜 Próximos</button>
       </div>
@@ -1198,7 +1203,7 @@
     </div>
     <div class="fila-sel acciones-sel">
       <button onclick="accionMasiva('nuevo')">✨ A nuevo</button>
-      <button onclick="accionMasiva('stock')">📦 A archivo</button>
+      <button onclick="accionMasiva('stock')">📦 A stock</button>
       <button class="peligro" onclick="accionMasiva('borrar')">🗑️ Borrar</button>
     </div>
   </div>
