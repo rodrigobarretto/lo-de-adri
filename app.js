@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '23';                // subir junto con VERSION de sw.js
+const VERSION_APP = '24';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 // Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
@@ -2272,7 +2272,8 @@ function tarjetaReserva(r) {
         ${p.imagen_url ? `<img src="${escapar(p.imagen_url)}" alt="">` : '<div class="sin-foto">📰</div>'}
         <div><div class="t">${escapar(p.titulo)}</div><div class="c">${r.cantidad} × ${plata(r.precio != null ? r.precio : p.precio)} = ${plata(c.total)}</div></div>
       </div>
-      <div class="reserva-cliente">👤 ${escapar(r.cliente)}<span class="tel">📞 ${escapar(telefonoLindo(r.telefono))}</span></div>
+      <div class="reserva-cliente">👤 ${escapar(r.cliente)}<span class="tel">📞 ${escapar(telefonoLindo(r.telefono))}</span>
+        <button class="btn-agendar" onclick="agendarContacto(${rid})">📇 Agendar</button></div>
       <div class="reserva-chips">
         ${sol ? (esProximo(p) ? `<span class="etiqueta prox">🔜 Reserva anticipada · ${escapar(textoSalida(p))}</span>` : `<span class="etiqueta sol">📦 Pedido a editorial${r.pedida_at ? ' · ya pedido' : ''}</span>`) : ''}
         ${cerrada
@@ -2284,6 +2285,33 @@ function tarjetaReserva(r) {
       ${r.nota ? `<div class="reserva-nota">📝 ${escapar(r.nota)}</div>` : ''}
       ${botones ? `<div class="reserva-botones">${botones}</div>` : ''}
     </div>`;
+}
+
+// ---------- Agendar al cliente en los contactos del teléfono ----------
+// Arma una tarjeta de contacto (.vcf): el teléfono la abre con "Contactos" para guardarla.
+async function agendarContacto(rid) {
+  const r = reservaPorId(rid);
+  if (!r) return;
+  const tel = '+' + numeroWhatsApp(r.telefono);
+  const nombre = String(r.cliente || 'Cliente').replace(/[\r\n;,]/g, ' ').trim();
+  const vcf = ['BEGIN:VCARD', 'VERSION:3.0', `FN:${nombre}`, `N:${nombre};;;;`, `TEL;TYPE=CELL:${tel}`,
+    `NOTE:Cliente de ${estado.nombre}`, 'END:VCARD'].join('\r\n');
+  const archivo = new File([vcf], nombre.replace(/[^\wáéíóúñ ]/gi, '').trim().replace(/\s+/g, '_') + '.vcf', { type: 'text/vcard' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      await navigator.share({ files: [archivo], title: nombre });
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+  }
+  // Si no se puede compartir, se descarga: al abrirla, el teléfono ofrece guardarla en Contactos
+  const url = URL.createObjectURL(archivo);
+  const enlace = document.createElement('a');
+  enlace.href = url; enlace.download = archivo.name;
+  document.body.appendChild(enlace); enlace.click(); enlace.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  avisar('📇 Abrí el archivo descargado y elegí "Contactos" para guardarlo', 'info', 5000);
 }
 
 // ---------- Cobros ----------
