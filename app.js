@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '24';                // subir junto con VERSION de sw.js
+const VERSION_APP = '25';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 // Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
@@ -2846,7 +2846,7 @@ async function guardarAjustes() {
   const mp_cvu = $('ajusteCvu').value.replace(/\D/g, '').slice(0, 22);
   if (mp_cvu && mp_cvu.length !== 22) { avisar('El CVU tiene 22 números', 'mal'); return; }
   const mp_titular = $('ajusteTitular').value.trim().slice(0, 60);
-  const { error } = await db.from('ajustes').upsert({ id: 1, nombre, whatsapp, sena_pct, mp_alias, mp_titular, mp_cvu });
+  const { error } = await db.from('ajustes').update({ nombre, whatsapp, sena_pct, mp_alias, mp_titular, mp_cvu }).eq('id', 1);
   ocultarCargando();
   if (error) { console.error(error); avisar('❌ ' + mensajeError(error), 'mal', 5000); return; }
 
