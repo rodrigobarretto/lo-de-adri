@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '25';                // subir junto con VERSION de sw.js
+const VERSION_APP = '26';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 // Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
@@ -90,6 +90,7 @@ const estado = {
   motivos: [],
   movimientos: [],
   tabReservas: 'activa',
+  ordenStock: (() => { try { return localStorage.getItem('orden_stock') || 'nuevos'; } catch (e) { return 'nuevos'; } })(),
   senaPct: 100,                                          // se paga el total para reservar
   mpAlias: leerAjusteLocal('mp_alias') || '',            // alias para transferir
   mpTitular: leerAjusteLocal('mp_titular') || '',
@@ -1198,6 +1199,7 @@ function portadaDeSerie(serie) {
 }
 
 async function cargarStock() {
+  if ($('ordenStock')) $('ordenStock').value = estado.ordenStock;
   $('listaStock').innerHTML = '<p class="vacio">Cargando…</p>';
   try {
     await Promise.all([traerProductos(), traerReservas().catch(() => [])]);
@@ -1260,7 +1262,18 @@ function listaStockFiltrada() {
   if (estado.filtro === 'archivo') lista = lista.filter(p => !esNovedad(p) && !esProximo(p) && cantidadDe(p) > 0);
   if (estado.filtro === 'agotado') lista = lista.filter(p => cantidadDe(p) === 0 && !esProximo(p));
   if (estado.filtro === 'proximo') lista = lista.filter(esProximo);
-  return filtrarPorTexto(lista, $('buscador').value);
+  lista = filtrarPorTexto(lista, $('buscador').value).slice();
+  const orden = estado.ordenStock || 'nuevos';
+  if (orden === 'az') lista.sort((a, b) => compararNombres(a.titulo, b.titulo));
+  else if (orden === 'za') lista.sort((a, b) => compararNombres(b.titulo, a.titulo));
+  else if (orden === 'viejos') lista.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  return lista;
+}
+
+function elegirOrdenStock(select) {
+  estado.ordenStock = select.value;
+  try { localStorage.setItem('orden_stock', select.value); } catch (e) {}
+  dibujarStock();
 }
 
 function dibujarStock() {
@@ -3765,13 +3778,20 @@ function elegirOrdenCliente(select) {
   dibujarCatalogo();
 }
 
+// Orden alfabético: sin importar mayúsculas ni tildes, y "N° 2" antes que "N° 10"
+function compararNombres(a, b) {
+  return String(a || '').localeCompare(String(b || ''), 'es', { numeric: true, sensitivity: 'base' });
+}
+
 function ordenarEntradas(lista) {
   const copia = lista.slice();
   if (filtroCliente.orden === 'barato') copia.sort((a, b) => a.precio - b.precio);
   else if (filtroCliente.orden === 'caro') copia.sort((a, b) => b.precio - a.precio);
-  else if (filtroCliente.orden === 'nombre') copia.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es', { numeric: true }));
+  else if (filtroCliente.orden === 'nombre') copia.sort((a, b) => compararNombres(a.nombre, b.nombre));
+  else if (filtroCliente.orden === 'nombre-za') copia.sort((a, b) => compararNombres(b.nombre, a.nombre));
   else copia.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
   // Lo que hay en el puesto primero; lo que hay que pedir, después
+  if (filtroCliente.orden === 'nombre' || filtroCliente.orden === 'nombre-za') return copia;   // estricto por abecedario
   return copia.filter(e => e.hay).concat(copia.filter(e => !e.hay));
 }
 

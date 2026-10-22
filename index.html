@@ -1095,6 +1095,16 @@
         <button data-filtro="proximo" onclick="elegirFiltro(this)">🔜 Próximos</button>
       </div>
       <input type="search" id="buscador" class="buscador" placeholder="🔎 Buscar por título o palabra clave" oninput="dibujarStock()">
+      <div class="barra-orden">
+        <label>Ordenar:
+          <select id="ordenStock" onchange="elegirOrdenStock(this)">
+            <option value="nuevos">Últimos cargados</option>
+            <option value="viejos">Primeros cargados</option>
+            <option value="az">Por nombre (A-Z)</option>
+            <option value="za">Por nombre (Z-A)</option>
+          </select>
+        </label>
+      </div>
       <div class="fila-contador">
         <p class="contador" id="contador"></p>
         <button class="btn-chico" id="btnElegirVarios" onclick="entrarSeleccion()">☑️ Elegir varios</button>
@@ -1182,6 +1192,7 @@
             <option value="barato">Menor precio</option>
             <option value="caro">Mayor precio</option>
             <option value="nombre">Por nombre (A-Z)</option>
+            <option value="nombre-za">Por nombre (Z-A)</option>
           </select>
         </label>
       </div>
