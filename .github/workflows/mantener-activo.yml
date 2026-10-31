@@ -1,0 +1,18 @@
+# Supabase (plan gratis) pausa el proyecto si pasa una semana sin uso.
+# Esto le hace una consulta liviana cada 2 días para que nunca se pause.
+name: Mantener activa la base
+
+on:
+  schedule:
+    - cron: "17 12 */2 * *"
+  workflow_dispatch:
+
+jobs:
+  despertar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar la base
+        run: |
+          curl -sS -o /dev/null -w "%{http_code}\n" \
+            "https://bwraqfodqrformwxuooo.supabase.co/rest/v1/ajustes?select=id&limit=1" \
+            -H "apikey: sb_publishable_xazA_cdy-DxfcoYng9ObYQ_X3qZF_Jy"
