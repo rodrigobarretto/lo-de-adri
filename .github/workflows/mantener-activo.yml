@@ -1,18 +1,60 @@
-# Supabase (plan gratis) pausa el proyecto si pasa una semana sin uso.
-# Esto le hace una consulta liviana cada 2 días para que nunca se pause.
+# Supabase (plan gratis) pausa el proyecto si hay poca actividad en una semana.
+# Esto hace varias consultas reales todos los días para que no se pause,
+# y avisa con un "issue" en GitHub si la base no responde.
 name: Mantener activa la base
 
 on:
   schedule:
-    - cron: "17 12 */2 * *"
+    - cron: "17 9 * * *"     # todos los días (06:17 hora Argentina)
+    - cron: "43 21 * * *"    # y a la noche (18:43 hora Argentina)
   workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
 
 jobs:
   despertar:
     runs-on: ubuntu-latest
     steps:
-      - name: Consultar la base
+      - name: Consultar la base varias veces
+        env:
+          URL: https://bwraqfodqrformwxuooo.supabase.co/rest/v1
+          KEY: sb_publishable_xazA_cdy-DxfcoYng9ObYQ_X3qZF_Jy
         run: |
-          curl -sS -o /dev/null -w "%{http_code}\n" \
-            "https://bwraqfodqrformwxuooo.supabase.co/rest/v1/ajustes?select=id&limit=1" \
-            -H "apikey: sb_publishable_xazA_cdy-DxfcoYng9ObYQ_X3qZF_Jy"
+          fallas=0
+          for tabla in "ajustes?select=id&limit=1" "productos?select=id&limit=5" "series?select=id&limit=5" "titulos?select=id&limit=5" "productos?select=id,titulo&order=created_at.desc&limit=3"; do
+            codigo=$(curl -sS --retry 4 --retry-delay 10 --retry-all-errors -o /dev/null -w "%{http_code}" "$URL/$tabla" -H "apikey: $KEY" || echo 000)
+            echo "$tabla -> $codigo"
+            [ "$codigo" = "200" ] || fallas=$((fallas+1))
+            sleep 3
+          done
+          echo "FALLAS=$fallas" >> "$GITHUB_ENV"
+
+      - name: Avisar si la base no responde
+        if: env.FALLAS != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "⚠️ La base de Lo de Adri no responde ($(date -u +%d/%m))" \
+            --body "La consulta diaria falló. Probablemente Supabase pausó el proyecto: entrá a supabase.com, abrí el proyecto 'Lo de Adri' y tocá Restore." || true
+          exit 1
+
+      # GitHub apaga las tareas programadas si el repositorio pasa 60 días sin cambios.
+      # Una vez por mes deja una marca para que eso no pase.
+      - name: Mantener vivo el repositorio
+        if: github.event_name == 'schedule'
+        run: |
+          git clone -q --depth 1 "https://x-access-token:${{ github.token }}@github.com/$GITHUB_REPOSITORY" repo
+          cd repo
+          ultimo=$(git log -1 --format=%ct)
+          ahora=$(date +%s)
+          if [ $(( (ahora - ultimo) / 86400 )) -ge 30 ]; then
+            git config user.name "github-actions"
+            git config user.email "github-actions@users.noreply.github.com"
+            date -u +%F > .ultima-revision
+            git add .ultima-revision
+            git commit -q -m "Revisión automática mensual"
+            git push -q
+          fi
