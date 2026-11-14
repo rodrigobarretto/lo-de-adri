@@ -683,6 +683,19 @@
     .descripcion-detalle p { margin: 0; white-space: pre-line; }
     .descripcion-detalle.recortada p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
     .descripcion-detalle .ver-mas { background: none; border: 0; color: var(--azul); font-weight: 800; padding: 6px 0 0; font-size: .95rem; }
+    .ed-seccion { font-weight: 900; font-size: 1.05rem; margin: 18px 0 6px; padding-top: 12px; border-top: 2px solid var(--borde); }
+    .editar-campos .ed-seccion:first-child { border-top: 0; padding-top: 0; margin-top: 4px; }
+    .ed-fotos { display: flex; gap: 8px; margin-bottom: 8px; }
+    .ed-fotos img, .ed-fotos .sin-foto { width: 64px; height: 86px; object-fit: cover; border-radius: 10px; background: var(--gris); display: grid; place-items: center; font-size: 1.6rem; }
+    .ed-botones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 4px; }
+    .ed-botones button { border-radius: 12px; padding: 12px 8px; font-weight: 800; background: var(--gris); border: 2px solid var(--borde); color: var(--texto); }
+    .ed-botones button.no { background: var(--rojo-claro); color: var(--rojo); border-color: var(--rojo-borde); }
+    .link-chico { background: none; border: 0; color: var(--azul); font-weight: 800; padding: 8px 0; text-align: left; }
+    .serie-elegida { display: flex; gap: 12px; align-items: center; margin: 10px 0 4px; }
+    .serie-elegida img, .serie-elegida .sin-foto { width: 56px; height: 74px; object-fit: cover; border-radius: 10px; background: var(--gris); display: grid; place-items: center; font-size: 1.5rem; flex-shrink: 0; }
+    .serie-elegida .cant { display: block; color: var(--suave); font-size: .85rem; font-weight: 700; }
+    #selSerie { width: 100%; }
+    .btn-principal .chico-btn { display: block; font-size: .85rem; font-weight: 700; opacity: .9; }
     .cuenta-desc { text-align: right; color: var(--suave); font-size: .8rem; margin: 4px 2px 0; }
 
     /* REDES */
@@ -706,7 +719,7 @@
 
     .producto .detalle-cat { font-size: .85rem; color: var(--suave); font-weight: 700; }
     .editar-campos { display: grid; gap: 4px; }
-    .editar-campos select { width: 100%; padding: 14px; font-size: 1.05rem; border: 2px solid var(--borde); border-radius: 16px; background: var(--campo); color: var(--texto); }
+    #selSerie, .editar-campos select { width: 100%; padding: 14px; font-size: 1.05rem; border: 2px solid var(--borde); border-radius: 16px; background: var(--campo); color: var(--texto); }
     .titulo-final { margin: 6px 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--gris); font-weight: 800; }
 
     /* VARIAS FOTOS */

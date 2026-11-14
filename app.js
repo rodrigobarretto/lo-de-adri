@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '26';                // subir junto con VERSION de sw.js
+const VERSION_APP = '27';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 // Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
@@ -427,27 +427,38 @@ function actualizarFormularioModo() {
 }
 
 function dibujarListaSeries() {
-  const botones = estado.series.map(serie => {
-    const portada = portadaDeSerie(serie);
+  const elegida = estado.serieElegida && estado.serieElegida !== 'nueva' ? serieDe(estado.serieElegida) : null;
+  const opciones = estado.series.slice().sort((x, y) => compararNombres(x.nombre, y.nombre)).map(serie => {
     const cant = numerosDeSerie(serie.id).length;
-    const activo = Number(estado.serieElegida) === Number(serie.id) ? 'activo' : '';
-    return `
-      <button class="serie-opcion ${activo}" onclick="elegirSerie(${Number(serie.id)})">
-        ${portada ? `<img src="${escapar(portada)}" alt="">` : '<span class="sin-foto">📚</span>'}
-        <span>${escapar(serie.nombre)}<span class="cant">${cant} número${cant === 1 ? '' : 's'} cargado${cant === 1 ? '' : 's'}</span></span>
-      </button>`;
+    return `<option value="${Number(serie.id)}" ${elegida && Number(elegida.id) === Number(serie.id) ? 'selected' : ''}>${escapar(serie.nombre)} (${cant})</option>`;
   }).join('');
-  const nueva = `<button class="serie-opcion nueva ${estado.serieElegida === 'nueva' ? 'activo' : ''}" onclick="elegirSerie('nueva')">➕ Es una colección nueva</button>`;
-  const elegida = estado.serieElegida && estado.serieElegida !== 'nueva' && serieDe(estado.serieElegida);
-  const cambiar = elegida ? `<button class="accion chico-accion" onclick="pantallaPortadaSerie(${Number(elegida.id)})">🖼️ Cambiar la portada de «${escapar(elegida.nombre)}»</button>` : '';
-  $('listaSeries').innerHTML = botones + nueva + cambiar;
+  let ficha = '';
+  if (elegida) {
+    const portada = portadaDeSerie(elegida);
+    const cant = numerosDeSerie(elegida.id).length;
+    ficha = `
+      <div class="serie-elegida">
+        ${portada ? `<img src="${escapar(portada)}" alt="">` : '<span class="sin-foto">📚</span>'}
+        <span><b>${escapar(elegida.nombre)}</b><span class="cant">${cant} número${cant === 1 ? '' : 's'} cargado${cant === 1 ? '' : 's'}</span></span>
+      </div>
+      <div class="ed-botones">
+        <button type="button" onclick="pantallaEditarSerie(${Number(elegida.id)})">✏️ Editar colección</button>
+        <button type="button" class="no" onclick="pantallaEliminarSerie(${Number(elegida.id)})">🗑️ Eliminar</button>
+      </div>`;
+  }
+  $('listaSeries').innerHTML = `
+    <select id="selSerie" onchange="elegirSerie(this.value === 'nueva' ? 'nueva' : (this.value ? Number(this.value) : null))">
+      <option value="" ${!estado.serieElegida ? 'selected' : ''}>— Elegí la colección —</option>
+      ${opciones}
+      <option value="nueva" ${estado.serieElegida === 'nueva' ? 'selected' : ''}>➕ Crear una colección nueva</option>
+    </select>${ficha}`;
   $('bloqueSerieNueva').classList.toggle('oculto', estado.serieElegida !== 'nueva');
 }
 
 function elegirSerie(id) {
   estado.serieElegida = id;
   actualizarFormularioModo();
-  setTimeout(() => (id === 'nueva' ? $('nombreSerieNueva') : $('nuevoNumero')).focus(), 150);
+  if (id) setTimeout(() => (id === 'nueva' ? $('nombreSerieNueva') : $('nuevoNumero')).focus(), 150);
 }
 
 async function prepararCarga() {
@@ -939,7 +950,7 @@ function dibujarBusqueda(q) {
       <button class="${busqueda.desc === -1 ? 'activo' : ''}" onclick="elegirDescBuscada(-1)">Sin descripción</button></div>` : ''}
     <div class="acciones">
       <button class="btn-principal" onclick="usarBusqueda()" ${!busqueda.fotos.length && (busqueda.desc === null || busqueda.desc < 0) ? 'disabled' : ''}>✅ Usar esto</button>
-      <button class="accion cerrar" onclick="${paraSerie ? `pantallaPortadaSerie(${Number(busqueda.destino.sid)}, ${busqueda.destino.pid ? Number(busqueda.destino.pid) : 'null'})` : 'cerrarHoja()'}">Cancelar</button>
+      <button class="accion cerrar" onclick="${paraSerie ? `pantallaPortadaSerie(${Number(busqueda.destino.sid)}, ${busqueda.destino.pid ? Number(busqueda.destino.pid) : 'null'})` : busqueda.destino && busqueda.destino.tipo === 'producto' ? `pantallaEditar(${Number(busqueda.destino.pid)})` : 'cerrarHoja()'}">Cancelar</button>
     </div>`);
 }
 
@@ -1025,9 +1036,10 @@ async function usarBusqueda() {
         const rutas = fotosDe(viejo).filter(u => !esPortadaDeSerie(u)).map(rutaDeFoto).filter(Boolean);
         if (rutas.length) db.storage.from(BUCKET).remove(rutas).catch(() => {});
       }
+      if (viejo) Object.assign(viejo, cambios);
       ocultarCargando();
-      cerrarHoja();
-      avisar('✅ Ficha actualizada' + avisoParcial);
+      avisar('✅ Fotos y descripción guardadas' + avisoParcial);
+      pantallaEditar(pid);
       refrescar();
     }
   } catch (err) {
@@ -1061,7 +1073,7 @@ function pantallaFotos(pid) {
     <div class="acciones">
       ${fotos.length < MAX_FOTOS ? `<button class="btn-principal btn-azul" onclick="document.getElementById('inputFotoProducto').click()">📷 Agregar foto</button>` : ''}
       <button class="accion" onclick="buscarFotoParaProducto(${Number(pid)})">🔎 Buscar en internet (reemplaza las fotos)</button>
-      <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Listo</button>
+      <button class="accion cerrar" onclick="pantallaEditar(${Number(pid)})">◀ Volver a Editar</button>
     </div>`;
   $('hoja').scrollTop = 0;
 }
@@ -1379,20 +1391,9 @@ function dibujarHoja(id) {
       <button onclick="pantallaIngreso(${pid})"><span class="ic">➕</span>Llegaron más</button>
     </div>
     <div class="acciones">
-      <button class="accion" onclick="pantallaEditar(${pid})">✏️ Editar publicación (título, número, modelo…)</button>
-      ${p.serie_id && serieDe(p.serie_id) ? `<button class="accion" onclick="pantallaNombreSerie(${Number(p.serie_id)}, ${pid})">📚 Cambiar el nombre de la colección</button>` : ''}
-      <button class="accion" onclick="pantallaPrecio(${pid})">💲 Cambiar el precio</button>
-      <button class="accion" onclick="pantallaFotos(${pid})">🖼️ Fotos (${fotosDe(p).length} de ${MAX_FOTOS})</button>
-      <button class="accion" onclick="buscarFotoParaProducto(${pid})">🔎 Buscar fotos y descripción en internet</button>
-      <button class="accion" onclick="pantallaDescripcion(${pid})">📝 ${p.descripcion ? 'Cambiar la descripción' : 'Agregar descripción'}</button>
-      ${esProximo(p) ? '' : nuevo
-        ? `<button class="accion" onclick="cambiarTipo(${pid}, 'stock')">📦 Pasar a stock</button>`
-        : `<button class="accion" onclick="cambiarTipo(${pid}, 'nuevo')">✨ Marcar como nuevo otra vez</button>`}
-      ${esProximo(p) ? '' : `<button class="accion" onclick="cambiarTipo(${pid}, 'proximo')">🔜 Pasar a Próximamente</button>`}
+      <button class="btn-principal btn-azul" onclick="pantallaEditar(${pid})">✏️ Editar<span class="chico-btn">fotos, título, colección, precio, cantidad, descripción…</span></button>
       ${disp ? `<button class="accion wa" onclick="compartirProducto(${pid})">📲 Mandar esta por WhatsApp</button>` : ''}
-      ${p.serie_id && serieDe(p.serie_id) ? `
-        <button class="accion wa" onclick="compartirSerie(${Number(p.serie_id)})">📚 Mandar toda la colección</button>
-        <button class="accion" onclick="pantallaPortadaSerie(${Number(p.serie_id)}, ${pid})">🖼️ Cambiar la portada de la colección</button>` : ''}
+      ${p.serie_id && serieDe(p.serie_id) ? `<button class="accion wa" onclick="compartirSerie(${Number(p.serie_id)})">📚 Mandar toda la colección</button>` : ''}
       <button class="accion peligro" onclick="pantallaBorrar(${pid})">🗑️ Borrar del todo</button>
       <button class="accion cerrar" onclick="cerrarHoja()">Cerrar</button>
     </div>
@@ -1446,11 +1447,23 @@ function pantallaEditar(pid) {
     estado.series.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
       .map(x => `<option value="${Number(x.id)}" ${serie && Number(serie.id) === Number(x.id) ? 'selected' : ''}>${escapar(x.nombre)}</option>`).join('');
   const opcionesCat = Object.keys(CATEGORIAS).map(c => `<option value="${c}" ${p.categoria === c ? 'selected' : ''}>${escapar(CATEGORIAS[c])}</option>`).join('');
+  const fotos = fotosDe(p);
   $('hojaContenido').innerHTML = `
-    <h3>✏️ Editar publicación</h3>
+    <h3>✏️ Editar</h3>
     <div class="editar-campos">
+      <p class="ed-seccion">🖼️ Fotos <span class="opcional">(se guardan al toque)</span></p>
+      <div class="ed-fotos">
+        ${fotos.map((u, i) => `<img src="${escapar(u)}" alt="Foto ${i + 1}">`).join('') || '<span class="sin-foto">📰</span>'}
+      </div>
+      <div class="ed-botones">
+        <button type="button" onclick="pantallaFotos(${Number(pid)})">🖼️ Cambiar fotos (${fotos.length} de ${MAX_FOTOS})</button>
+        <button type="button" onclick="buscarFotoParaProducto(${Number(pid)})">🔎 Buscar en internet</button>
+      </div>
+
+      <p class="ed-seccion">📰 Título</p>
       <label class="mini" for="edSerie">Colección</label>
       <select id="edSerie" onchange="actualizarEdicion()">${opcionesSerie}</select>
+      <div id="edBotonSerie"></div>
 
       <div id="edBloqueTitulo" class="${serie ? 'oculto' : ''}">
         <label class="mini" for="edTitulo">Título</label>
@@ -1471,6 +1484,17 @@ function pantallaEditar(pid) {
 
       <p class="titulo-final" id="edTituloFinal"></p>
 
+      <p class="ed-seccion">💲 Precio y cantidad</p>
+      <label class="mini" for="edPrecio">Precio</label>
+      <div class="campo-precio">
+        <span>$</span>
+        <input type="text" id="edPrecio" inputmode="numeric" value="${Number(p.precio)}" autocomplete="off">
+      </div>
+      <label class="mini" for="edCantidad">Cuántos hay</label>
+      ${selectorCantidad('edCantidad', cantidadDe(p), 999)}
+      <p class="ayuda-campo">Para corregir un error de carga. Las ventas y bajas anotalas con los botones de la ficha, así quedan registradas.</p>
+
+      <p class="ed-seccion">🏷️ Estado y tipo</p>
       <label class="mini" for="edEstado">Estado</label>
       <select id="edEstado" onchange="$('edBloqueSalida').classList.toggle('oculto', this.value !== 'proximo')">
         <option value="nuevo" ${p.tipo === 'nuevo' ? 'selected' : ''}>✨ Nuevo</option>
@@ -1485,17 +1509,16 @@ function pantallaEditar(pid) {
       <label class="mini" for="edCategoria">Tipo</label>
       <select id="edCategoria">${opcionesCat}</select>
 
-      <label class="mini" for="edPrecio">Precio</label>
-      <div class="campo-precio">
-        <span>$</span>
-        <input type="text" id="edPrecio" inputmode="numeric" value="${Number(p.precio)}" autocomplete="off">
-      </div>
+      <p class="ed-seccion">📝 Descripción</p>
+      <textarea id="edDescripcion" rows="6" maxlength="${MAX_DESCRIPCION}" oninput="contarDescripcion(this)" placeholder="De qué trata: contenido, qué trae, para quién es…">${escapar(p.descripcion || '')}</textarea>
+      <p class="cuenta-desc" id="edDescripcionCuenta">${(p.descripcion || '').length} de ${MAX_DESCRIPCION}</p>
     </div>
     <div class="acciones espacio-arriba">
       <button class="btn-principal" onclick="guardarEdicion(${Number(pid)})">✅ Guardar cambios</button>
       <button class="accion cerrar" onclick="dibujarHoja(${Number(pid)})">Cancelar</button>
     </div>`;
   $('hoja').scrollTop = 0;
+  $('edCantidad').dataset.min = '0';
   actualizarEdicion();
 }
 
@@ -1513,6 +1536,8 @@ function datosEdicion() {
 function actualizarEdicion() {
   const d = datosEdicion();
   $('edBloqueTitulo').classList.toggle('oculto', !!d.serie);
+  $('edBotonSerie').innerHTML = d.serie
+    ? `<button type="button" class="link-chico" onclick="pantallaEditarSerie(${Number(d.serie.id)}, ${Number(editandoPid)})">📚 Editar la colección «${escapar(d.serie.nombre)}» (nombre, portada)</button>` : '';
   // Si se saca de una colección, propone el nombre que tenía como título
   if (!d.serie && !$('edTitulo').value.trim()) {
     const p = productoPorId(editandoPid);
@@ -1548,9 +1573,25 @@ async function guardarEdicion(pid) {
     categoria: d.nueva ? 'Colecciones' : $('edCategoria').value,
     tipo: $('edEstado').value,
     fecha_salida: $('edEstado').value === 'proximo' ? ($('edSalida').value || null) : null,
+    descripcion: $('edDescripcion').value.trim().slice(0, MAX_DESCRIPCION) || null,
     precio
   };
-  await actualizarProducto(pid, cambios, '✏️ Publicación actualizada');
+  const prod = productoPorId(pid);
+  if (cambios.tipo === 'nuevo' && prod && prod.tipo !== 'nuevo') cambios.created_at = new Date().toISOString();
+  // Cantidad: si cambió, queda anotado como corrección en Ventas y bajas
+  const nuevaCant = Number($('edCantidad').textContent);
+  const delta = prod ? nuevaCant - cantidadDe(prod) : 0;
+  if (delta) {
+    mostrarCargando('Guardando…');
+    const { error } = await db.rpc('mover_stock', { pid, delta, tipo: delta > 0 ? 'ingreso' : 'ajuste', motivo: 'Corrección al editar' });
+    ocultarCargando();
+    if (error) {
+      console.error(error);
+      avisar(/NO_ALCANZA/.test(error.message || '') ? 'No puede haber menos de los que están reservados.' : '❌ ' + mensajeError(error), 'mal', 5000);
+      return;
+    }
+  }
+  await actualizarProducto(pid, cambios, '✏️ Cambios guardados');
   // Si el título es nuevo, queda en la lista de títulos
   guardarTituloSiEsNuevo(d.base, cambios.categoria, !!sid);
 }
@@ -1564,7 +1605,7 @@ function pantallaNombreSerie(sid, pid) {
     <input type="text" id="serieEditada" value="${escapar(serie.nombre)}" autocomplete="off" autocapitalize="words" style="margin-bottom:14px">
     <div class="acciones">
       <button class="btn-principal" onclick="guardarNombreSerie(${Number(sid)})">✅ Guardar</button>
-      <button class="accion cerrar" onclick="${pid ? `dibujarHoja(${Number(pid)})` : 'cerrarHoja()'}">Cancelar</button>
+      <button class="accion cerrar" onclick="pantallaEditarSerie(${Number(sid)}, ${pid ? Number(pid) : 'null'})">Cancelar</button>
     </div>`);
   setTimeout(() => { $('serieEditada').focus(); $('serieEditada').select(); }, 150);
 }
@@ -1797,6 +1838,64 @@ async function quitarPersona(id) {
 
 let portadaSid = null, portadaPid = null;
 
+// Editar una colección: nombre, portada o eliminarla
+function pantallaEditarSerie(sid, pid) {
+  const serie = serieDe(sid);
+  if (!serie) { pid ? pantallaEditar(pid) : cerrarHoja(); return; }
+  const portada = portadaDeSerie(serie);
+  const cant = numerosDeSerie(sid).length;
+  const volver = pid ? `pantallaEditar(${Number(pid)})` : 'cerrarHoja()';
+  mostrarHoja(`
+    <h3>📚 ${escapar(serie.nombre)}</h3>
+    <div class="portada-actual">
+      ${portada ? `<img src="${escapar(portada)}" alt="Portada">` : '<span class="sin-foto">📚</span>'}
+      <span class="chico">${cant} número${cant === 1 ? '' : 's'} cargado${cant === 1 ? '' : 's'}</span>
+    </div>
+    <div class="acciones">
+      <button class="accion" onclick="pantallaNombreSerie(${Number(sid)}, ${pid ? Number(pid) : 'null'})">✏️ Cambiar el nombre</button>
+      <button class="accion" onclick="pantallaPortadaSerie(${Number(sid)}, ${pid ? Number(pid) : 'null'})">🖼️ Cambiar la portada</button>
+      <button class="accion peligro" onclick="pantallaEliminarSerie(${Number(sid)}, ${pid ? Number(pid) : 'null'})">🗑️ Eliminar la colección</button>
+      <button class="accion cerrar" onclick="${volver}">◀ Volver</button>
+    </div>`);
+}
+
+function pantallaEliminarSerie(sid, pid) {
+  const serie = serieDe(sid);
+  const cant = numerosDeSerie(sid).length;
+  mostrarHoja(`
+    <h3>¿Eliminar la colección «${escapar(serie.nombre)}»?</h3>
+    <p class="info">${cant
+      ? `Sus ${cant} número${cant === 1 ? '' : 's'} <b>no se borran</b>: quedan como publicaciones sueltas, con el mismo título, foto y stock.`
+      : 'No tiene números cargados.'}</p>
+    <div class="acciones">
+      <button class="accion peligro" style="text-align:center" onclick="eliminarSerie(${Number(sid)}, ${pid ? Number(pid) : 'null'})">🗑️ Sí, eliminar la colección</button>
+      <button class="accion cerrar" onclick="pantallaEditarSerie(${Number(sid)}, ${pid ? Number(pid) : 'null'})">Cancelar</button>
+    </div>`);
+}
+
+async function eliminarSerie(sid, pid) {
+  const serie = serieDe(sid);
+  if (!serie) return;
+  mostrarCargando('Eliminando…');
+  // Los números pasan a ser sueltos (se hace explícito por las dudas)
+  const r1 = await db.from('productos').update({ serie_id: null }).eq('serie_id', sid);
+  const r2 = r1.error ? r1 : await db.from('series').delete().eq('id', sid);
+  ocultarCargando();
+  if (r2.error) { console.error(r2.error); avisar('❌ ' + mensajeError(r2.error), 'mal', 5000); return; }
+  estado.productos.forEach(p => { if (Number(p.serie_id) === Number(sid)) p.serie_id = null; });
+  estado.series = estado.series.filter(s => Number(s.id) !== Number(sid));
+  if (Number(estado.serieElegida) === Number(sid)) estado.serieElegida = null;
+  // Si la portada era una foto suelta (no de un número), se borra del almacenamiento
+  const u = serie.portada_url;
+  if (u && !estado.productos.some(p => fotosDe(p).includes(u)) && !esPortadaDeSerie(u)) {
+    const ruta = rutaDeFoto(u);
+    if (ruta) db.storage.from(BUCKET).remove([ruta]).catch(() => {});
+  }
+  avisar('🗑️ Colección eliminada');
+  if (pid) pantallaEditar(pid); else cerrarHoja();
+  refrescar();
+}
+
 function pantallaPortadaSerie(sid, pid) {
   const serie = serieDe(sid);
   if (!serie) return;
@@ -1827,7 +1926,7 @@ function pantallaPortadaSerie(sid, pid) {
     ${opciones ? `<p class="mini">O tocá una foto de sus números</p><div class="resultados-fotos">${opciones}</div>` : ''}
     <div class="acciones">
       ${serie.portada_url ? `<button class="accion" onclick="guardarPortadaSerie(${portadaSid}, '', portadaPid, '↩️ Portada automática')">↩️ Usar la del primer número (automática)</button>` : ''}
-      <button class="accion cerrar" onclick="${portadaPid ? `dibujarHoja(${portadaPid})` : 'cerrarHoja()'}">Listo</button>
+      <button class="accion cerrar" onclick="pantallaEditarSerie(${portadaSid}, ${portadaPid || 'null'})">◀ Volver</button>
     </div>`);
 }
 
@@ -1902,6 +2001,7 @@ function dibujarColecciones() {
           <span class="chico">${cant} número${cant === 1 ? '' : 's'}</span>
           <button onclick="pantallaPortadaSerie(${Number(serie.id)})">🖼️ Cambiar portada</button>
           <button onclick="pantallaNombreSerie(${Number(serie.id)})">✏️ Cambiar nombre</button>
+          <button class="no" onclick="pantallaEliminarSerie(${Number(serie.id)})">🗑️ Eliminar</button>
         </div>
       </div>`;
   }).join('') : '<p class="vacio">Todavía no hay colecciones. Se crean al cargar un número de una colección.</p>';
