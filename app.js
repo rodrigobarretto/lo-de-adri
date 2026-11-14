@@ -14,7 +14,7 @@ const WHATSAPP_POR_DEFECTO = '5491126467210';   // Adonde llegan los pedidos de 
 const NUMERO_SOPORTE = '5491126467210';    // Tu número, para el botón "Necesito ayuda"
 const DIAS_NOVEDAD = 7;                    // Días que algo figura como "Nuevo"
 const BUCKET = 'fotos-stock';
-const VERSION_APP = '27';                // subir junto con VERSION de sw.js
+const VERSION_APP = '28';                // subir junto con VERSION de sw.js
 // ---------------------------------------------------------------
 
 // Si un pedido vuelve "sin permiso" porque la sesión venció (la app quedó en segundo
@@ -3861,15 +3861,16 @@ function dibujarFiltrosCliente() {
   });
   if (!opciones.some(o => o.valor === filtroCliente.ver)) filtroCliente.ver = 'todo';
 
-  $('filtrosCliente').innerHTML = opciones.map(o => `
-    <button class="chip ${o.valor === filtroCliente.ver ? 'activo' : ''}" data-valor="${escapar(o.valor)}"
-      onclick="elegirFiltroCliente(this)">${escapar(o.texto)} <span>${o.cant}</span></button>
-  `).join('');
+  $('filtrosCliente').innerHTML = `
+    <label class="filtro-ver">Ver:
+      <select id="verCliente" onchange="elegirFiltroCliente(this)">
+        ${opciones.map(o => `<option value="${escapar(o.valor)}" ${o.valor === filtroCliente.ver ? 'selected' : ''}>${escapar(o.valor === 'todo' ? '📋 Todo' : o.texto)} (${o.cant})</option>`).join('')}
+      </select>
+    </label>`;
 }
 
-function elegirFiltroCliente(boton) {
-  filtroCliente.ver = boton.dataset.valor;
-  document.querySelectorAll('#filtrosCliente .chip').forEach(c => c.classList.toggle('activo', c === boton));
+function elegirFiltroCliente(control) {
+  filtroCliente.ver = control.value !== undefined && control.tagName === 'SELECT' ? control.value : control.dataset.valor;
   dibujarCatalogo();
 }
 

@@ -394,6 +394,8 @@
     .chip span { color: var(--suave); font-weight: 700; margin-left: 2px; }
     .chip.activo { background: var(--azul); border-color: var(--azul); color: #fff; }
     .chip.activo span { color: var(--azul-borde); }
+    .filtro-ver { display: flex; align-items: center; gap: 8px; font-weight: 800; margin: 0 2px 10px; }
+    .filtro-ver select { flex: 1; min-width: 0; font-size: 1.05rem; font-weight: 800; padding: 12px; border-radius: 14px; border: 2px solid var(--borde); background: var(--campo); color: var(--texto); }
     .barra-orden {
       display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
       color: var(--suave); font-size: .9rem; margin: 0 2px 12px;
@@ -1196,7 +1198,7 @@
       <p class="cat-intro">Tocá una tapa para verla grande. <b>Reservar</b> te guarda lo que hay en el puesto (pagando el total). Si algo no está, <b>Solicitar ejemplar</b> lo encarga a la editorial solo para vos, pagando el total.</p>
       <input type="search" id="buscadorCatalogo" class="buscador" placeholder="🔎 Buscar por título o palabra clave" oninput="dibujarCatalogo()">
       <div id="vistaSerie" class="oculto"></div>
-      <div class="chips" id="filtrosCliente"></div>
+      <div class="filtros-cliente" id="filtrosCliente"></div>
       <div class="barra-orden" id="barraOrden">
         <span id="contadorCatalogo"></span>
         <label>Ordenar:
